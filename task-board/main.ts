@@ -200,7 +200,7 @@ function createDemoTasks(settings: TaskBoardSettings): Task[] {
     ['剩余任务示例 2', 'other', [], ''],
   ];
 
-  const boardCapacity = Math.max(0, settings.columns * settings.rows - 1);
+  const boardCapacity = Math.max(0, settings.columns * settings.rows);
 
   return demo.map(([title, oldProperty, tags, log], index) => {
     const createdAt = minutes(480 - index * 20);
@@ -283,7 +283,7 @@ export default class TaskBoardPlugin extends Plugin {
     const raw = await this.loadData() as Partial<StoredData> | null;
     const settings = normalizeSettings(raw?.settings);
     const rawTasks = Array.isArray(raw?.tasks) ? raw.tasks : [];
-    const boardCapacity = Math.max(0, settings.columns * settings.rows - 1);
+    const boardCapacity = Math.max(0, settings.columns * settings.rows);
 
     let tasks: Task[];
     if (rawTasks.length === 0) {
@@ -595,7 +595,7 @@ class TaskBoardSettingTab extends PluginSettingTab {
 
     new Setting(container)
       .setName('纵向卡片数量')
-      .setDesc('例如 3 表示总共 3 行。最后一格固定为“显示所有任务”。')
+      .setDesc('例如 3 表示总共 3 行。')
       .addText((text) => text
         .setValue(String(this.taskBoardPlugin.data.settings.rows))
         .onChange(async (value) => {
@@ -769,7 +769,7 @@ class TaskBoardSettingTab extends PluginSettingTab {
     container.createEl('h3', { text: '其他' });
     new Setting(container)
       .setName('任务排序说明')
-      .setDesc('任务卡片按“显示在看板”选择结果排列；剩余任务统一放在最后一格。');
+      .setDesc('任务卡片按“显示在看板”选择结果排列。');
   }
 
   private renderPropertySetting(container: HTMLElement, property: TaskPropertyDef): void {
@@ -862,7 +862,7 @@ class TaskBoardView extends ItemView {
 
     const { columns, rows } = this.plugin.data.settings;
     const slotCount = Math.max(1, columns * rows);
-    const cardCapacity = Math.max(0, slotCount - 1);
+    const cardCapacity = slotCount;
 
     const header = root.createDiv({ cls: 'task-board-header' });
     const headerText = header.createDiv({ cls: 'task-board-header-text' });
@@ -878,6 +878,9 @@ class TaskBoardView extends ItemView {
 
     const statsButton = actions.createEl('button', { text: '统计', cls: 'task-board-secondary-button' });
     statsButton.addEventListener('click', () => void this.plugin.activateView(VIEW_TYPE_STATS));
+
+    const allTasksButton = actions.createEl('button', { text: '显示所有任务', cls: 'task-board-secondary-button' });
+    allTasksButton.addEventListener('click', () => new AllTasksModal(this.app, this.plugin).open());
 
     const addButton = actions.createEl('button', { text: '+ 新建任务', cls: 'task-board-add-button' });
     addButton.addEventListener('click', () => void this.plugin.createAndOpenTask());
@@ -897,7 +900,6 @@ class TaskBoardView extends ItemView {
       grid.createDiv({ cls: 'task-board-empty-cell' });
     }
 
-    this.renderAllTasksCard(grid, this.plugin.data.tasks);
   }
 
   private renderTaskCard(container: HTMLElement, task: Task): void {
@@ -997,56 +999,6 @@ class TaskBoardView extends ItemView {
     });
   }
 
-  private renderAllTasksCard(container: HTMLElement, tasks: Task[]): void {
-    const cell = container.createDiv({ cls: 'task-all-tasks-stack-cell' });
-    cell.draggable = false;
-
-    const button = cell.createEl('button', {
-      text: '打开所有任务',
-      cls: 'task-all-tasks-stack-button',
-    });
-    button.addEventListener('click', () => new AllTasksModal(this.app, this.plugin).open());
-
-    const stack = cell.createDiv({ cls: 'task-stack-visual' });
-    const previews = Math.max(5, Math.min(7, tasks.length || 5));
-    const poses = [
-      [-9, 4, -7],
-      [7, 2, 5],
-      [-3, -6, -2],
-      [10, 8, 8],
-      [-7, 10, 3],
-      [2, 14, -6],
-      [13, 17, -3],
-    ];
-
-    for (let index = 0; index < previews; index += 1) {
-      const preview = stack.createDiv({ cls: 'task-stack-preview' });
-      const [x, y, rotation] = poses[index % poses.length];
-      preview.style.setProperty('--stack-x', `${x}px`);
-      preview.style.setProperty('--stack-y', `${y}px`);
-      preview.style.setProperty('--stack-rotation', `${rotation}deg`);
-      preview.style.setProperty('--stack-index', String(index));
-    }
-
-    if (tasks.length === 0) {
-      stack.createDiv({ cls: 'task-stack-empty' });
-    }
-  }
-}
-
-class TaskModal extends Modal {
-  constructor(app: App, private readonly plugin: TaskBoardPlugin, private readonly taskId: string) {
-    super(app);
-  }
-
-  onOpen(): void {
-    this.applyBackdropBlur();
-    this.modalEl.addClass('task-board-task-modal');
-    this.render();
-  }
-
-  onClose(): void { this.contentEl.empty(); }
-
   private applyBackdropBlur(): void {
     this.modalEl.parentElement?.querySelector<HTMLElement>('.modal-bg')?.classList.add('task-board-modal-backdrop');
   }
@@ -1064,29 +1016,48 @@ class TaskModal extends Modal {
     const property = getProperty(this.plugin.data.settings, task.propertyId);
     this.setTitle('编辑任务');
 
+    // 编辑区使用独立的草稿值，只有点击“保存修改”才写回任务。
+    // 这样可以避免其他控件触发刷新时，把尚未保存的名称/属性/标签覆盖掉。
+    let draftTitle = task.title;
+    let draftPropertyId = task.propertyId;
+    let draftTags = [...task.tags];
+
     const header = container.createDiv({ cls: 'task-modal-header' });
-    header.createDiv({ text: task.title, cls: 'task-modal-title-preview' });
-    header.createDiv({ text: `${property.name} · 创建于 ${formatDate(task.createdAt)}`, cls: 'task-modal-meta' });
+    const titlePreview = header.createDiv({ text: task.title, cls: 'task-modal-title-preview' });
+    const metaPreview = header.createDiv({ text: `${property.name} · 创建于 ${formatDate(task.createdAt)}`, cls: 'task-modal-meta' });
 
     const editor = container.createDiv({ cls: 'task-modal-editor-v2' });
     editor.createDiv({ text: '任务名称', cls: 'task-modal-section-label' });
-    const titleInput = editor.createEl('input', { type: 'text', value: task.title, cls: 'task-modal-title-input' });
+    const titleInput = editor.createEl('input', { type: 'text', value: draftTitle, cls: 'task-modal-title-input' });
+    titleInput.addEventListener('input', () => {
+      draftTitle = titleInput.value;
+      titlePreview.setText(draftTitle.trim() || '未命名任务');
+    });
 
     editor.createDiv({ text: '任务属性', cls: 'task-modal-section-label' });
     const propertySelect = editor.createEl('select', { cls: 'task-modal-type-select' });
     this.plugin.data.settings.properties.forEach((item) => {
       const option = propertySelect.createEl('option', { value: item.id, text: item.name });
-      option.selected = item.id === task.propertyId;
+      option.selected = item.id === draftPropertyId;
+    });
+    propertySelect.addEventListener('change', () => {
+      draftPropertyId = propertySelect.value;
+      const selectedProperty = getProperty(this.plugin.data.settings, draftPropertyId);
+      metaPreview.setText(`${selectedProperty.name} · 创建于 ${formatDate(task.createdAt)}`);
     });
 
     const statusRow = editor.createDiv({ cls: 'task-modal-status-row' });
     this.renderToggle(statusRow, '已完成', task.completed, (value) => {
-      task.completed = value;
-      void this.plugin.saveTask(task).then(() => this.render());
+      const currentTask = this.plugin.getTask(this.taskId);
+      if (!currentTask) return;
+      currentTask.completed = value;
+      void this.plugin.saveTask(currentTask);
     });
     this.renderToggle(statusRow, '显示在任务界面', task.visibleOnBoard, (value) => {
-      task.visibleOnBoard = value;
-      void this.plugin.saveTask(task).then(() => this.render());
+      const currentTask = this.plugin.getTask(this.taskId);
+      if (!currentTask) return;
+      currentTask.visibleOnBoard = value;
+      void this.plugin.saveTask(currentTask);
     });
 
     editor.createDiv({ text: '任务标签', cls: 'task-modal-section-label' });
@@ -1094,23 +1065,31 @@ class TaskModal extends Modal {
     this.plugin.data.settings.tags.forEach((tag) => {
       const label = tagsBox.createEl('label', { cls: 'task-modal-tag-option' });
       const checkbox = label.createEl('input', { type: 'checkbox' });
-      checkbox.checked = task.tags.includes(tag);
+      checkbox.checked = draftTags.includes(tag);
       label.createSpan({ text: tag });
       checkbox.addEventListener('change', () => {
         if (checkbox.checked) {
-          if (!task.tags.includes(tag)) task.tags.push(tag);
+          if (!draftTags.includes(tag)) draftTags.push(tag);
         } else {
-          task.tags = task.tags.filter((item) => item !== tag);
+          draftTags = draftTags.filter((item) => item !== tag);
         }
       });
     });
 
-    const saveButton = editor.createEl('button', { text: '保存任务信息', cls: 'mod-cta task-modal-save-button' });
+    const saveButton = editor.createEl('button', { text: '保存修改', cls: 'mod-cta task-modal-save-button' });
     saveButton.addEventListener('click', (): void => {
-      task.title = titleInput.value.trim() || '未命名任务';
-      task.propertyId = propertySelect.value;
-      void this.plugin.saveTask(task).then(() => {
-        new Notice('任务信息已保存');
+      const currentTask = this.plugin.getTask(this.taskId);
+      if (!currentTask) {
+        new Notice('任务不存在，无法保存');
+        return;
+      }
+
+      currentTask.title = draftTitle.trim() || '未命名任务';
+      currentTask.propertyId = draftPropertyId;
+      currentTask.tags = uniqueStrings(draftTags);
+
+      void this.plugin.saveTask(currentTask).then(() => {
+        new Notice('任务修改已保存');
         this.render();
       });
     });

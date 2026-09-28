@@ -1,7 +1,7 @@
 {
   "id": "task-board",
   "name": "Task Board",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "minAppVersion": "1.0.0",
   "description": "Build a configurable task board with metadata, logs, memo topics, statistics, and per-task background images.",
   "author": "Qihao",

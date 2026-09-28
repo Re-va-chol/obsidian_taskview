@@ -133,7 +133,7 @@ function createDemoTasks(settings) {
     ["\u5269\u4F59\u4EFB\u52A1\u793A\u4F8B 1", "other", ["\u7D27\u6025"], ""],
     ["\u5269\u4F59\u4EFB\u52A1\u793A\u4F8B 2", "other", [], ""]
   ];
-  const boardCapacity = Math.max(0, settings.columns * settings.rows - 1);
+  const boardCapacity = Math.max(0, settings.columns * settings.rows);
   return demo.map(([title, oldProperty, tags, log], index) => {
     const createdAt = minutes(480 - index * 20);
     const updatedAt = minutes(20 + index * 10);
@@ -207,7 +207,7 @@ var TaskBoardPlugin = class extends import_obsidian.Plugin {
     const raw = await this.loadData();
     const settings = normalizeSettings(raw == null ? void 0 : raw.settings);
     const rawTasks = Array.isArray(raw == null ? void 0 : raw.tasks) ? raw.tasks : [];
-    const boardCapacity = Math.max(0, settings.columns * settings.rows - 1);
+    const boardCapacity = Math.max(0, settings.columns * settings.rows);
     let tasks;
     if (rawTasks.length === 0) {
       tasks = createDemoTasks(settings);
@@ -577,7 +577,7 @@ var TaskBoardSettingTab = class extends import_obsidian.PluginSettingTab {
       }));
     });
     container.createEl("h3", { text: "\u5176\u4ED6" });
-    new import_obsidian.Setting(container).setName("\u4EFB\u52A1\u6392\u5E8F\u8BF4\u660E").setDesc("\u4EFB\u52A1\u5361\u7247\u6309\u201C\u663E\u793A\u5728\u770B\u677F\u201D\u9009\u62E9\u7ED3\u679C\u6392\u5217\uFF1B\u5269\u4F59\u4EFB\u52A1\u7EDF\u4E00\u653E\u5728\u6700\u540E\u4E00\u683C\u3002");
+    new import_obsidian.Setting(container).setName("\u4EFB\u52A1\u6392\u5E8F\u8BF4\u660E").setDesc("\u4EFB\u52A1\u5361\u7247\u6309\u201C\u663E\u793A\u5728\u770B\u677F\u201D\u9009\u62E9\u7ED3\u679C\u6392\u5217\u3002");
   }
   renderPropertySetting(container, property) {
     const row = container.createDiv({ cls: "task-board-setting-item" });
@@ -669,7 +669,7 @@ var TaskBoardView = class extends import_obsidian.ItemView {
     root.addClass("task-board-view");
     const { columns, rows } = this.plugin.data.settings;
     const slotCount = Math.max(1, columns * rows);
-    const cardCapacity = Math.max(0, slotCount - 1);
+    const cardCapacity = slotCount;
     const header = root.createDiv({ cls: "task-board-header" });
     const headerText = header.createDiv({ cls: "task-board-header-text" });
     headerText.createEl("h2", { text: "\u4EFB\u52A1\u770B\u677F", cls: "task-board-heading" });
@@ -682,6 +682,8 @@ var TaskBoardView = class extends import_obsidian.ItemView {
     memoButton.addEventListener("click", () => void this.plugin.activateView(VIEW_TYPE_MEMO));
     const statsButton = actions.createEl("button", { text: "\u7EDF\u8BA1", cls: "task-board-secondary-button" });
     statsButton.addEventListener("click", () => void this.plugin.activateView(VIEW_TYPE_STATS));
+    const allTasksButton = actions.createEl("button", { text: "\u663E\u793A\u6240\u6709\u4EFB\u52A1", cls: "task-board-secondary-button" });
+    allTasksButton.addEventListener("click", () => new AllTasksModal(this.app, this.plugin).open());
     const addButton = actions.createEl("button", { text: "+ \u65B0\u5EFA\u4EFB\u52A1", cls: "task-board-add-button" });
     addButton.addEventListener("click", () => void this.plugin.createAndOpenTask());
     const grid = root.createDiv({ cls: "task-board-grid" });
@@ -693,7 +695,6 @@ var TaskBoardView = class extends import_obsidian.ItemView {
     while (grid.children.length < cardCapacity) {
       grid.createDiv({ cls: "task-board-empty-cell" });
     }
-    this.renderAllTasksCard(grid, this.plugin.data.tasks);
   }
   renderTaskCard(container, task) {
     const property = getProperty(this.plugin.data.settings, task.propertyId);
@@ -787,37 +788,6 @@ var TaskBoardView = class extends import_obsidian.ItemView {
       new TaskModal(this.app, this.plugin, task.id).open();
     });
   }
-  renderAllTasksCard(container, tasks) {
-    const cell = container.createDiv({ cls: "task-all-tasks-stack-cell" });
-    cell.draggable = false;
-    const button = cell.createEl("button", {
-      text: "\u6253\u5F00\u6240\u6709\u4EFB\u52A1",
-      cls: "task-all-tasks-stack-button"
-    });
-    button.addEventListener("click", () => new AllTasksModal(this.app, this.plugin).open());
-    const stack = cell.createDiv({ cls: "task-stack-visual" });
-    const previews = Math.max(5, Math.min(7, tasks.length || 5));
-    const poses = [
-      [-9, 4, -7],
-      [7, 2, 5],
-      [-3, -6, -2],
-      [10, 8, 8],
-      [-7, 10, 3],
-      [2, 14, -6],
-      [13, 17, -3]
-    ];
-    for (let index = 0; index < previews; index += 1) {
-      const preview = stack.createDiv({ cls: "task-stack-preview" });
-      const [x, y, rotation] = poses[index % poses.length];
-      preview.style.setProperty("--stack-x", `${x}px`);
-      preview.style.setProperty("--stack-y", `${y}px`);
-      preview.style.setProperty("--stack-rotation", `${rotation}deg`);
-      preview.style.setProperty("--stack-index", String(index));
-    }
-    if (tasks.length === 0) {
-      stack.createDiv({ cls: "task-stack-empty" });
-    }
-  }
 };
 var TaskModal = class extends import_obsidian.Modal {
   constructor(app, plugin, taskId) {
@@ -847,48 +817,70 @@ var TaskModal = class extends import_obsidian.Modal {
     }
     const property = getProperty(this.plugin.data.settings, task.propertyId);
     this.setTitle("\u7F16\u8F91\u4EFB\u52A1");
+    let draftTitle = task.title;
+    let draftPropertyId = task.propertyId;
+    let draftTags = [...task.tags];
     const header = container.createDiv({ cls: "task-modal-header" });
-    header.createDiv({ text: task.title, cls: "task-modal-title-preview" });
-    header.createDiv({ text: `${property.name} \xB7 \u521B\u5EFA\u4E8E ${formatDate(task.createdAt)}`, cls: "task-modal-meta" });
+    const titlePreview = header.createDiv({ text: task.title, cls: "task-modal-title-preview" });
+    const metaPreview = header.createDiv({ text: `${property.name} \xB7 \u521B\u5EFA\u4E8E ${formatDate(task.createdAt)}`, cls: "task-modal-meta" });
     const editor = container.createDiv({ cls: "task-modal-editor-v2" });
     editor.createDiv({ text: "\u4EFB\u52A1\u540D\u79F0", cls: "task-modal-section-label" });
-    const titleInput = editor.createEl("input", { type: "text", value: task.title, cls: "task-modal-title-input" });
+    const titleInput = editor.createEl("input", { type: "text", value: draftTitle, cls: "task-modal-title-input" });
+    titleInput.addEventListener("input", () => {
+      draftTitle = titleInput.value;
+      titlePreview.setText(draftTitle.trim() || "\u672A\u547D\u540D\u4EFB\u52A1");
+    });
     editor.createDiv({ text: "\u4EFB\u52A1\u5C5E\u6027", cls: "task-modal-section-label" });
     const propertySelect = editor.createEl("select", { cls: "task-modal-type-select" });
     this.plugin.data.settings.properties.forEach((item) => {
       const option = propertySelect.createEl("option", { value: item.id, text: item.name });
-      option.selected = item.id === task.propertyId;
+      option.selected = item.id === draftPropertyId;
+    });
+    propertySelect.addEventListener("change", () => {
+      draftPropertyId = propertySelect.value;
+      const selectedProperty = getProperty(this.plugin.data.settings, draftPropertyId);
+      metaPreview.setText(`${selectedProperty.name} \xB7 \u521B\u5EFA\u4E8E ${formatDate(task.createdAt)}`);
     });
     const statusRow = editor.createDiv({ cls: "task-modal-status-row" });
     this.renderToggle(statusRow, "\u5DF2\u5B8C\u6210", task.completed, (value) => {
-      task.completed = value;
-      void this.plugin.saveTask(task).then(() => this.render());
+      const currentTask = this.plugin.getTask(this.taskId);
+      if (!currentTask) return;
+      currentTask.completed = value;
+      void this.plugin.saveTask(currentTask);
     });
     this.renderToggle(statusRow, "\u663E\u793A\u5728\u4EFB\u52A1\u754C\u9762", task.visibleOnBoard, (value) => {
-      task.visibleOnBoard = value;
-      void this.plugin.saveTask(task).then(() => this.render());
+      const currentTask = this.plugin.getTask(this.taskId);
+      if (!currentTask) return;
+      currentTask.visibleOnBoard = value;
+      void this.plugin.saveTask(currentTask);
     });
     editor.createDiv({ text: "\u4EFB\u52A1\u6807\u7B7E", cls: "task-modal-section-label" });
     const tagsBox = editor.createDiv({ cls: "task-modal-tag-options" });
     this.plugin.data.settings.tags.forEach((tag) => {
       const label = tagsBox.createEl("label", { cls: "task-modal-tag-option" });
       const checkbox = label.createEl("input", { type: "checkbox" });
-      checkbox.checked = task.tags.includes(tag);
+      checkbox.checked = draftTags.includes(tag);
       label.createSpan({ text: tag });
       checkbox.addEventListener("change", () => {
         if (checkbox.checked) {
-          if (!task.tags.includes(tag)) task.tags.push(tag);
+          if (!draftTags.includes(tag)) draftTags.push(tag);
         } else {
-          task.tags = task.tags.filter((item) => item !== tag);
+          draftTags = draftTags.filter((item) => item !== tag);
         }
       });
     });
-    const saveButton = editor.createEl("button", { text: "\u4FDD\u5B58\u4EFB\u52A1\u4FE1\u606F", cls: "mod-cta task-modal-save-button" });
+    const saveButton = editor.createEl("button", { text: "\u4FDD\u5B58\u4FEE\u6539", cls: "mod-cta task-modal-save-button" });
     saveButton.addEventListener("click", () => {
-      task.title = titleInput.value.trim() || "\u672A\u547D\u540D\u4EFB\u52A1";
-      task.propertyId = propertySelect.value;
-      void this.plugin.saveTask(task).then(() => {
-        new import_obsidian.Notice("\u4EFB\u52A1\u4FE1\u606F\u5DF2\u4FDD\u5B58");
+      const currentTask = this.plugin.getTask(this.taskId);
+      if (!currentTask) {
+        new import_obsidian.Notice("\u4EFB\u52A1\u4E0D\u5B58\u5728\uFF0C\u65E0\u6CD5\u4FDD\u5B58");
+        return;
+      }
+      currentTask.title = draftTitle.trim() || "\u672A\u547D\u540D\u4EFB\u52A1";
+      currentTask.propertyId = draftPropertyId;
+      currentTask.tags = uniqueStrings(draftTags);
+      void this.plugin.saveTask(currentTask).then(() => {
+        new import_obsidian.Notice("\u4EFB\u52A1\u4FEE\u6539\u5DF2\u4FDD\u5B58");
         this.render();
       });
     });
