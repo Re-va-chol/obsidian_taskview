@@ -7,6 +7,7 @@ import {
   Plugin,
   PluginSettingTab,
   Setting,
+  setIcon,
   TFile,
   WorkspaceLeaf,
   normalizePath,
@@ -26,6 +27,9 @@ interface TaskMetricDef {
   id: string;
   name: string;
 }
+
+interface CardTextStyle { size: number; weight: number; italic: boolean; color: string; }
+interface CardTypographySettings { title: CardTextStyle; property: CardTextStyle; tags: CardTextStyle; metrics: CardTextStyle; logs: CardTextStyle; }
 
 interface TaskLog {
   id: string;
@@ -77,6 +81,7 @@ interface TaskBoardSettings {
   tags: string[];
   metrics: TaskMetricDef[];
   statsColumns: string[];
+  cardTypography: CardTypographySettings;
 }
 
 interface StoredData {
@@ -107,7 +112,8 @@ const DEFAULT_SETTINGS: TaskBoardSettings = {
     { id: 'first-edit', name: '已完成初步修改' },
     { id: 'submitted', name: '已经提交修改' },
   ],
-  statsColumns: ['completed', 'logCount', 'first-edit', 'submitted'],
+  statsColumns: ['tag:重要', 'tag:紧急', 'tag:长期', 'tag:工作日常', 'metric:first-edit', 'metric:submitted'],
+  cardTypography: { title: { size: 16, weight: 750, italic: false, color: '' }, property: { size: 16, weight: 750, italic: false, color: '' }, tags: { size: 12, weight: 500, italic: false, color: '' }, metrics: { size: 12, weight: 500, italic: false, color: '' }, logs: { size: 13, weight: 400, italic: false, color: '' } },
 };
 
 function cloneDefaults(): TaskBoardSettings {
@@ -147,6 +153,8 @@ function uniqueStrings(values: unknown): string[] {
   return [...new Set(values.map((v) => String(v).trim()).filter(Boolean))];
 }
 
+function normalizeCardTextStyle(raw: Partial<CardTextStyle> | null | undefined, fallback: CardTextStyle): CardTextStyle { return { size: safePositiveInt(Number(raw?.size), fallback.size, 8, 32), weight: safePositiveInt(Number(raw?.weight), fallback.weight, 300, 900), italic: Boolean(raw?.italic ?? fallback.italic), color: typeof raw?.color === 'string' ? raw.color : fallback.color }; }
+
 function normalizeSettings(raw: Partial<TaskBoardSettings> | null | undefined): TaskBoardSettings {
   const defaults = cloneDefaults();
   const settings = raw ?? {};
@@ -178,7 +186,22 @@ function normalizeSettings(raw: Partial<TaskBoardSettings> | null | undefined): 
           }))
           .filter((metric) => metric.name)
       : defaults.metrics,
-    statsColumns: uniqueStrings(settings.statsColumns),
+    statsColumns: (() => {
+      const availableTags = uniqueStrings(settings.tags).length > 0 ? uniqueStrings(settings.tags) : defaults.tags;
+      const availableMetrics = Array.isArray(settings.metrics) ? settings.metrics.map((metric) => String(metric?.id ?? '')).filter(Boolean) : defaults.metrics.map((metric) => metric.id);
+      const available = new Set([...availableTags.map((tag) => `tag:${tag}`), ...availableMetrics.map((id) => `metric:${id}`)]);
+      const raw = uniqueStrings(settings.statsColumns);
+      const migrated = raw.map((id) => {
+        if (id === 'property') return '';
+        if (available.has(id)) return id;
+        if (availableMetrics.includes(id)) return `metric:${id}`;
+        if (availableTags.includes(id)) return `tag:${id}`;
+        return '';
+      }).filter((id) => id && available.has(id));
+      const valid = uniqueStrings(migrated);
+      return valid.length ? valid : [...available];
+    })(),
+    cardTypography: { title: normalizeCardTextStyle(settings.cardTypography?.title, defaults.cardTypography.title), property: normalizeCardTextStyle(settings.cardTypography?.property, defaults.cardTypography.property), tags: normalizeCardTextStyle(settings.cardTypography?.tags, defaults.cardTypography.tags), metrics: normalizeCardTextStyle(settings.cardTypography?.metrics, defaults.cardTypography.metrics), logs: normalizeCardTextStyle(settings.cardTypography?.logs, defaults.cardTypography.logs) },
   };
 }
 
@@ -351,13 +374,6 @@ export default class TaskBoardPlugin extends Plugin {
       : [];
 
     this.data = { tasks, settings, memoTopics };
-
-    const requiredStats = ['completed', 'logCount'];
-    for (const stat of requiredStats) {
-      if (!this.data.settings.statsColumns.includes(stat)) {
-        this.data.settings.statsColumns.push(stat);
-      }
-    }
 
     await this.savePluginData();
   }
@@ -626,6 +642,15 @@ class TaskBoardSettingTab extends PluginSettingTab {
           this.taskBoardPlugin.refreshViews();
         }));
 
+    container.createEl('h3', { text: '卡片文字样式' });
+    container.createDiv({ text: '分别控制任务名称、任务属性、标签、任务指标和日志的字号、粗细、斜体和颜色。颜色留空表示跟随主题。', cls: 'task-board-setting-hint' });
+    const typography = this.taskBoardPlugin.data.settings.cardTypography;
+    this.renderCardTextStyle(container, '任务名称', typography.title);
+    this.renderCardTextStyle(container, '任务属性', typography.property);
+    this.renderCardTextStyle(container, '任务标签', typography.tags);
+    this.renderCardTextStyle(container, '任务指标', typography.metrics);
+    this.renderCardTextStyle(container, '任务日志', typography.logs);
+
     container.createEl('h4', { text: '任务背景图片' });
     container.createDiv({
       text: '任务可以使用本地图片作为卡片背景。图片会复制到当前 Vault 的 “Task Board/Backgrounds” 文件夹，因此换电脑并同步 Vault 后仍然可以使用。',
@@ -707,14 +732,22 @@ class TaskBoardSettingTab extends PluginSettingTab {
         .setPlaceholder('重要\n紧急\n长期')
         .setValue(this.taskBoardPlugin.data.settings.tags.join('\n'))
         .onChange(async (value) => {
-          this.taskBoardPlugin.data.settings.tags = uniqueStrings(value.split(/[\n,，]/));
+          const nextTags = uniqueStrings(value.split(/[\n,，]/));
+          const currentStats = this.taskBoardPlugin.data.settings.statsColumns;
+          const oldTagColumns = new Set(currentStats.filter((id) => id.startsWith('tag:')));
+          this.taskBoardPlugin.data.settings.tags = nextTags;
+          const nextTagColumns = nextTags.map((tag) => `tag:${tag}`);
+          this.taskBoardPlugin.data.settings.statsColumns = [
+            ...currentStats.filter((id) => !id.startsWith('tag:') || nextTagColumns.includes(id)),
+            ...nextTagColumns.filter((id) => !oldTagColumns.has(id) && !currentStats.includes(id)),
+          ];
           await this.taskBoardPlugin.savePluginData();
           this.taskBoardPlugin.refreshViews();
         }));
 
-    container.createEl('h3', { text: '任务指标 / 统计维度' });
+    container.createEl('h3', { text: '任务指标' });
     container.createDiv({
-      text: '这些指标会同时出现在任务卡片底部，并可以作为统计表中的列。例如“已完成初步修改”“已经提交修改”。',
+      text: '这些指标会同时出现在任务卡片底部，也可以作为“任务指标”统计页的列。',
       cls: 'task-board-setting-hint',
     });
 
@@ -729,7 +762,7 @@ class TaskBoardSettingTab extends PluginSettingTab {
         .onClick(async () => {
           const id = createId('metric');
           this.taskBoardPlugin.data.settings.metrics.push({ id, name: '新指标' });
-          this.taskBoardPlugin.data.settings.statsColumns.push(id);
+          this.taskBoardPlugin.data.settings.statsColumns.push(`metric:${id}`);
           await this.taskBoardPlugin.savePluginData();
           this.taskBoardPlugin.refreshViews();
           this.display();
@@ -742,10 +775,8 @@ class TaskBoardSettingTab extends PluginSettingTab {
     });
 
     const statColumns = [
-      { id: 'completed', name: '已完成' },
-      { id: 'logCount', name: '日志数量' },
-      { id: 'tagCount', name: '标签数量' },
-      ...this.taskBoardPlugin.data.settings.metrics.map((metric) => ({ id: metric.id, name: metric.name })),
+      ...this.taskBoardPlugin.data.settings.tags.map((tag) => ({ id: `tag:${tag}`, name: `#${tag}` })),
+      ...this.taskBoardPlugin.data.settings.metrics.map((metric) => ({ id: `metric:${metric.id}`, name: metric.name })),
     ];
 
     statColumns.forEach((dimension) => {
@@ -770,6 +801,14 @@ class TaskBoardSettingTab extends PluginSettingTab {
     new Setting(container)
       .setName('任务排序说明')
       .setDesc('任务卡片按“显示在看板”选择结果排列。');
+  }
+
+  private renderCardTextStyle(container: HTMLElement, name: string, style: CardTextStyle): void {
+    container.createEl('h4', { text: name });
+    new Setting(container).setName('字号').addText((text) => text.setValue(String(style.size)).onChange(async (value) => { style.size = safePositiveInt(Number(value), style.size, 8, 32); await this.taskBoardPlugin.savePluginData(); this.taskBoardPlugin.refreshViews(); }));
+    new Setting(container).setName('粗细').addDropdown((drop) => drop.addOptions({ '300': '细', '400': '正常', '500': '中等', '600': '半粗', '700': '粗', '750': '更粗', '800': '很粗', '900': '最粗' }).setValue(String(style.weight)).onChange(async (value) => { style.weight = Number(value); await this.taskBoardPlugin.savePluginData(); this.taskBoardPlugin.refreshViews(); }));
+    new Setting(container).setName('斜体').addToggle((toggle) => toggle.setValue(style.italic).onChange(async (value) => { style.italic = value; await this.taskBoardPlugin.savePluginData(); this.taskBoardPlugin.refreshViews(); }));
+    new Setting(container).setName('颜色').addText((text) => text.setPlaceholder('留空跟随主题，例如 #ffffff').setValue(style.color).onChange(async (value) => { style.color = value.trim(); await this.taskBoardPlugin.savePluginData(); this.taskBoardPlugin.refreshViews(); }));
   }
 
   private renderPropertySetting(container: HTMLElement, property: TaskPropertyDef): void {
@@ -833,7 +872,7 @@ class TaskBoardSettingTab extends PluginSettingTab {
 
     deleteButton.addEventListener('click', () => {
       this.taskBoardPlugin.data.settings.metrics = this.taskBoardPlugin.data.settings.metrics.filter((item) => item.id !== metric.id);
-      this.taskBoardPlugin.data.settings.statsColumns = this.taskBoardPlugin.data.settings.statsColumns.filter((id) => id !== metric.id);
+      this.taskBoardPlugin.data.settings.statsColumns = this.taskBoardPlugin.data.settings.statsColumns.filter((id) => id !== `metric:${metric.id}`);
       this.taskBoardPlugin.data.tasks.forEach((task) => delete task.metrics[metric.id]);
       void this.taskBoardPlugin.savePluginData().then(() => {
         this.taskBoardPlugin.refreshViews();
@@ -909,6 +948,9 @@ class TaskBoardView extends ItemView {
     card.style.setProperty('--task-bg-opacity', String(this.plugin.data.settings.backgroundOpacity / 100));
     card.style.setProperty('--task-bg-overlay', String(this.plugin.data.settings.backgroundOverlay / 100));
     card.style.setProperty('--task-bg-blur', `${this.plugin.data.settings.backgroundBlur}px`);
+    const typography = this.plugin.data.settings.cardTypography;
+    const setTextStyle = (prefix: string, style: CardTextStyle): void => { card.style.setProperty(`--task-${prefix}-size`, `${style.size}px`); card.style.setProperty(`--task-${prefix}-weight`, String(style.weight)); card.style.setProperty(`--task-${prefix}-italic`, style.italic ? 'italic' : 'normal'); card.style.setProperty(`--task-${prefix}-color`, style.color || 'inherit'); };
+    setTextStyle('title', typography.title); setTextStyle('property', typography.property); setTextStyle('tags', typography.tags); setTextStyle('metrics', typography.metrics); setTextStyle('logs', typography.logs);
 
     const backgroundUrl = this.plugin.getTaskBackgroundUrl(task);
     if (backgroundUrl) {
@@ -918,13 +960,23 @@ class TaskBoardView extends ItemView {
 
     const content = card.createDiv({ cls: 'task-card-content' });
     const titleRow = content.createDiv({ cls: 'task-card-title-row' });
-    titleRow.createDiv({ cls: 'task-card-type-dot' }).style.backgroundColor = property.color;
     titleRow.createDiv({ text: task.title, cls: 'task-card-title' });
     titleRow.createDiv({ text: property.name, cls: 'task-card-type-label' });
 
     if (task.tags.length > 0) {
       const tags = content.createDiv({ cls: 'task-card-tags' });
       task.tags.slice(0, 4).forEach((tag) => tags.createSpan({ text: `#${tag}`, cls: 'task-board-tag' }));
+    }
+
+    const metrics = this.plugin.data.settings.metrics;
+    if (metrics.length > 0) {
+      const metricBox = content.createDiv({ cls: 'task-card-metrics' });
+      metrics.forEach((metric) => {
+        const label = metricBox.createEl('label', { cls: 'task-card-metric' });
+        const checkbox = label.createEl('input', { type: 'checkbox' }); checkbox.checked = Boolean(task.metrics[metric.id]);
+        label.createSpan({ text: metric.name }); checkbox.addEventListener('click', (event) => event.stopPropagation());
+        checkbox.addEventListener('change', () => { const current = this.plugin.getTask(task.id); if (!current) return; current.metrics[metric.id] = checkbox.checked; void this.plugin.saveTask(current).then(() => new Notice(`指标“${metric.name}”已更新`)); });
+      });
     }
 
     const logs = [...task.logs].sort((a, b) => b.editedAt - a.editedAt);
@@ -941,28 +993,7 @@ class TaskBoardView extends ItemView {
       });
     }
 
-    const metrics = this.plugin.data.settings.metrics;
-    if (metrics.length > 0) {
-      const metricBox = content.createDiv({ cls: 'task-card-metrics' });
-      metrics.forEach((metric) => {
-        const label = metricBox.createEl('label', { cls: 'task-card-metric' });
-        const checkbox = label.createEl('input', { type: 'checkbox' });
-        checkbox.checked = Boolean(task.metrics[metric.id]);
-        label.createSpan({ text: metric.name });
-        checkbox.addEventListener('click', (event) => event.stopPropagation());
-        checkbox.addEventListener('change', () => {
-          const current = this.plugin.getTask(task.id);
-          if (!current) return;
-          current.metrics[metric.id] = checkbox.checked;
-          void this.plugin.saveTask(current).then(() => new Notice(`指标“${metric.name}”已更新`));
-        });
-      });
-    }
 
-    if (task.completed) {
-      const footer = content.createDiv({ cls: 'task-card-footer task-card-footer-compact' });
-      footer.createSpan({ text: '已完成', cls: 'task-card-completed-badge' });
-    }
 
     let didDrag = false;
     card.draggable = true;
@@ -998,6 +1029,12 @@ class TaskBoardView extends ItemView {
       new TaskModal(this.app, this.plugin, task.id).open();
     });
   }
+}
+
+class TaskModal extends Modal {
+  constructor(app: App, private readonly plugin: TaskBoardPlugin, private readonly taskId: string) { super(app); }
+  onOpen(): void { this.applyBackdropBlur(); this.modalEl.addClass('task-board-task-modal'); this.render(); }
+  onClose(): void { this.contentEl.empty(); }
 
   private applyBackdropBlur(): void {
     this.modalEl.parentElement?.querySelector<HTMLElement>('.modal-bg')?.classList.add('task-board-modal-backdrop');
@@ -1021,12 +1058,34 @@ class TaskBoardView extends ItemView {
     let draftTitle = task.title;
     let draftPropertyId = task.propertyId;
     let draftTags = [...task.tags];
+    let draftMetrics = { ...task.metrics };
 
     const header = container.createDiv({ cls: 'task-modal-header' });
-    const titlePreview = header.createDiv({ text: task.title, cls: 'task-modal-title-preview' });
-    const metaPreview = header.createDiv({ text: `${property.name} · 创建于 ${formatDate(task.createdAt)}`, cls: 'task-modal-meta' });
+    const headerText = header.createDiv({ cls: 'task-modal-header-text' });
+    const titlePreview = headerText.createDiv({ text: task.title, cls: 'task-modal-title-preview' });
+    const metaPreview = headerText.createDiv({ text: `${property.name} · 创建于 ${formatDate(task.createdAt)}`, cls: 'task-modal-meta' });
+    const saveButton = header.createEl('button', { text: '保存修改', cls: 'mod-cta task-modal-save-button' });
 
-    const editor = container.createDiv({ cls: 'task-modal-editor-v2' });
+    const settingsCard = container.createDiv({ cls: 'task-modal-settings-card' });
+    const settingsHeader = settingsCard.createDiv({ cls: 'task-modal-settings-header' });
+    settingsHeader.createDiv({ text: '任务设置', cls: 'task-modal-settings-title' });
+    const expandButton = settingsHeader.createEl('button', { cls: 'task-modal-settings-edit-button', attr: { 'aria-label': '展开任务设置', title: '展开任务设置' } });
+    setIcon(expandButton, 'pencil');
+    const editor = settingsCard.createDiv({ cls: 'task-modal-editor-v2 is-collapsed' });
+    const collapseSettings = (): void => {
+      editor.addClass('is-collapsed');
+      expandButton.removeClass('is-hidden');
+      expandButton.setAttribute('aria-label', '展开任务设置');
+      expandButton.setAttribute('title', '展开任务设置');
+    };
+    const expandSettings = (): void => {
+      editor.removeClass('is-collapsed');
+      expandButton.addClass('is-hidden');
+      expandButton.setAttribute('aria-label', '任务设置已展开');
+      expandButton.setAttribute('title', '任务设置已展开');
+    };
+    expandButton.addEventListener('click', expandSettings);
+
     editor.createDiv({ text: '任务名称', cls: 'task-modal-section-label' });
     const titleInput = editor.createEl('input', { type: 'text', value: draftTitle, cls: 'task-modal-title-input' });
     titleInput.addEventListener('input', () => {
@@ -1076,83 +1135,40 @@ class TaskBoardView extends ItemView {
       });
     });
 
-    const saveButton = editor.createEl('button', { text: '保存修改', cls: 'mod-cta task-modal-save-button' });
+    if (this.plugin.data.settings.metrics.length > 0) {
+      editor.createDiv({ text: '任务指标', cls: 'task-modal-section-label' });
+      const metricsBox = editor.createDiv({ cls: 'task-modal-tag-options' });
+      this.plugin.data.settings.metrics.forEach((metric) => {
+        const label = metricsBox.createEl('label', { cls: 'task-modal-tag-option' });
+        const checkbox = label.createEl('input', { type: 'checkbox' });
+        checkbox.checked = Boolean(draftMetrics[metric.id]);
+        label.createSpan({ text: metric.name });
+        checkbox.addEventListener('change', () => { draftMetrics[metric.id] = checkbox.checked; });
+      });
+    }
+
+    const collapseIconRow = editor.createDiv({ cls: 'task-modal-collapse-row' });
+    const collapseButton = collapseIconRow.createEl('button', { cls: 'task-modal-collapse-button', attr: { 'aria-label': '收起任务设置', title: '收起任务设置' } });
+    const chevrons = collapseButton.createDiv({ cls: 'task-modal-collapse-chevrons' });
+    for (let i = 0; i < 3; i += 1) chevrons.createSpan({ cls: 'task-modal-collapse-chevron' });
+    collapseButton.addEventListener('click', collapseSettings);
+
     saveButton.addEventListener('click', (): void => {
       const currentTask = this.plugin.getTask(this.taskId);
-      if (!currentTask) {
-        new Notice('任务不存在，无法保存');
-        return;
-      }
-
+      if (!currentTask) { new Notice('任务不存在，无法保存'); return; }
       currentTask.title = draftTitle.trim() || '未命名任务';
       currentTask.propertyId = draftPropertyId;
       currentTask.tags = uniqueStrings(draftTags);
-
-      void this.plugin.saveTask(currentTask).then(() => {
-        new Notice('任务修改已保存');
-        this.render();
-      });
+      currentTask.metrics = { ...draftMetrics };
+      void this.plugin.saveTask(currentTask).then(() => { new Notice('任务修改已保存'); this.render(); });
     });
-
-    editor.createDiv({ text: '卡片背景图片', cls: 'task-modal-section-label' });
-    editor.createDiv({
-      text: '背景图片会保存到当前 Vault 的 Task Board/Backgrounds 文件夹。设置中的透明度、模糊和遮罩强度会应用到所有任务卡片。',
-      cls: 'task-modal-section-hint',
-    });
-
-    const backgroundRow = editor.createDiv({ cls: 'task-background-row' });
-    const backgroundInput = backgroundRow.createEl('input', { type: 'file', cls: 'task-background-file-input' });
-    backgroundInput.accept = 'image/*';
-    const chooseImageButton = backgroundRow.createEl('button', { text: task.backgroundImagePath ? '更换背景图片' : '选择本地图片', cls: 'task-modal-secondary-button' });
-    chooseImageButton.addEventListener('click', () => backgroundInput.click());
-    backgroundInput.addEventListener('change', () => {
-      const file = backgroundInput.files?.[0];
-      if (!file) return;
-      void this.plugin.setTaskBackground(this.taskId, file).then(() => {
-        new Notice('任务背景图片已更新');
-        this.render();
-      });
-    });
-
-    if (task.backgroundImagePath) {
-      const url = this.plugin.getTaskBackgroundUrl(task);
-      if (url) {
-        const preview = editor.createDiv({ cls: 'task-background-preview' });
-        preview.style.backgroundImage = `url("${url.replace(/"/g, '\\"')}")`;
-      }
-      const clearBackground = backgroundRow.createEl('button', { text: '移除背景', cls: 'task-modal-danger-link' });
-      clearBackground.addEventListener('click', () => {
-        void this.plugin.clearTaskBackground(this.taskId).then(() => {
-          new Notice('背景图片已移除');
-          this.render();
-        });
-      });
-    }
-
-    if (this.plugin.data.settings.metrics.length > 0) {
-      const metricsHeader = container.createDiv({ cls: 'task-modal-logs-header' });
-      metricsHeader.createDiv({ text: '任务指标', cls: 'task-modal-section-title' });
-      metricsHeader.createDiv({ text: '这些指标同时参与统计表。', cls: 'task-modal-section-hint' });
-
-      const metricsBox = container.createDiv({ cls: 'task-modal-metrics-grid' });
-      this.plugin.data.settings.metrics.forEach((metric) => {
-        const label = metricsBox.createEl('label', { cls: 'task-modal-metric-row' });
-        const checkbox = label.createEl('input', { type: 'checkbox' });
-        checkbox.checked = Boolean(task.metrics[metric.id]);
-        label.createSpan({ text: metric.name });
-        checkbox.addEventListener('change', () => {
-          task.metrics[metric.id] = checkbox.checked;
-          void this.plugin.saveTask(task);
-        });
-      });
-    }
 
     const logsHeader = container.createDiv({ cls: 'task-modal-logs-header' });
     logsHeader.createDiv({ text: '任务日志', cls: 'task-modal-section-title' });
-    logsHeader.createDiv({ text: '按最近编辑时间倒序排列', cls: 'task-modal-section-hint' });
+    logsHeader.createDiv({ text: '按编辑时间由远到近排列', cls: 'task-modal-section-hint' });
 
     const logs = container.createDiv({ cls: 'task-modal-logs' });
-    const sortedLogs = [...task.logs].sort((a, b) => b.editedAt - a.editedAt);
+    const sortedLogs = [...task.logs].sort((a, b) => a.editedAt - b.editedAt);
     if (sortedLogs.length === 0) {
       logs.createDiv({ text: '暂无日志。', cls: 'task-modal-empty-logs' });
     }
@@ -1179,6 +1195,22 @@ class TaskBoardView extends ItemView {
       });
     });
 
+    const backgroundSection = container.createDiv({ cls: 'task-modal-background-section' });
+    backgroundSection.createDiv({ text: '卡片背景图片', cls: 'task-modal-section-label' });
+    backgroundSection.createDiv({ text: '背景图片会保存到当前 Vault 的 Task Board/Backgrounds 文件夹。设置中的透明度、模糊和遮罩强度会应用到所有任务卡片。', cls: 'task-modal-section-hint' });
+    const backgroundRow = backgroundSection.createDiv({ cls: 'task-background-row' });
+    const backgroundInput = backgroundRow.createEl('input', { type: 'file', cls: 'task-background-file-input' });
+    backgroundInput.accept = 'image/*';
+    const chooseImageButton = backgroundRow.createEl('button', { text: task.backgroundImagePath ? '更换背景图片' : '选择本地图片', cls: 'task-modal-secondary-button' });
+    chooseImageButton.addEventListener('click', () => backgroundInput.click());
+    backgroundInput.addEventListener('change', () => { const file = backgroundInput.files?.[0]; if (!file) return; void this.plugin.setTaskBackground(this.taskId, file).then(() => { new Notice('任务背景图片已更新'); this.render(); }); });
+    if (task.backgroundImagePath) {
+      const url = this.plugin.getTaskBackgroundUrl(task);
+      if (url) { const preview = backgroundSection.createDiv({ cls: 'task-background-preview' }); preview.style.backgroundImage = `url("${url.replace(/"/g, '\\"')}")`; }
+      const clearBackground = backgroundRow.createEl('button', { text: '移除背景', cls: 'task-modal-danger-link' });
+      clearBackground.addEventListener('click', () => { void this.plugin.clearTaskBackground(this.taskId).then(() => { new Notice('背景图片已移除'); this.render(); }); });
+    }
+
     const bottom = container.createDiv({ cls: 'task-modal-bottom-actions' });
     const deleteButton = bottom.createEl('button', { text: '删除任务', cls: 'task-modal-danger-button' });
     deleteButton.addEventListener('click', () => {
@@ -1198,24 +1230,47 @@ class TaskBoardView extends ItemView {
   private renderLog(container: HTMLElement, log: TaskLog): void {
     const row = container.createDiv({ cls: 'task-modal-log-row' });
     const meta = row.createDiv({ cls: 'task-modal-log-meta' });
-    meta.createDiv({ text: formatDate(log.editedAt), cls: 'task-modal-log-time' });
+    const time = meta.createDiv({ text: formatDate(log.editedAt), cls: 'task-modal-log-time' });
+    const actions = meta.createDiv({ cls: 'task-modal-log-actions' });
+    const editButton = actions.createEl('button', { cls: 'task-modal-log-icon-button', attr: { 'aria-label': '编辑日志', title: '编辑日志' } });
+    setIcon(editButton, 'pencil');
+    const deleteButton = actions.createEl('button', { cls: 'task-modal-log-icon-button task-modal-log-delete-button', attr: { 'aria-label': '删除日志', title: '删除日志' } });
+    setIcon(deleteButton, 'trash-2');
+
     const textarea = row.createEl('textarea', { cls: 'task-modal-log-textarea' });
     textarea.value = log.content;
+    textarea.disabled = true;
+    const resizeLogTextarea = (): void => {
+      textarea.style.height = 'auto';
+      const maxHeight = 82;
+      textarea.style.height = `${Math.min(textarea.scrollHeight, maxHeight)}px`;
+      textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';
+    };
+    window.requestAnimationFrame(resizeLogTextarea);
 
-    const actions = row.createDiv({ cls: 'task-modal-log-actions' });
-    const saveButton = actions.createEl('button', { text: '保存修改', cls: 'task-modal-secondary-button' });
-    const deleteButton = actions.createEl('button', { text: '删除日志', cls: 'task-modal-danger-link' });
+    editButton.addEventListener('click', () => {
+      if (textarea.disabled) {
+        textarea.disabled = false;
+        textarea.focus();
+        resizeLogTextarea();
+        editButton.empty();
+        setIcon(editButton, 'check');
+        editButton.setAttribute('aria-label', '保存日志');
+        editButton.setAttribute('title', '保存日志');
+        editButton.addClass('is-saving');
+        return;
+      }
 
-    saveButton.addEventListener('click', () => {
       const task = this.plugin.getTask(this.taskId);
       if (!task) return;
       const currentLog = task.logs.find((item) => item.id === log.id);
       if (!currentLog) return;
       const content = textarea.value.trim();
       if (!content) return new Notice('日志不能为空');
+      const now = Date.now();
       currentLog.content = content;
-      currentLog.editedAt = Date.now();
-      task.updatedAt = Date.now();
+      currentLog.editedAt = now;
+      task.updatedAt = now;
       void this.plugin.saveTask(task).then(() => {
         new Notice('日志已保存');
         this.render();
@@ -1227,7 +1282,10 @@ class TaskBoardView extends ItemView {
       const task = this.plugin.getTask(this.taskId);
       if (!task) return;
       task.logs = task.logs.filter((item) => item.id !== log.id);
-      void this.plugin.saveTask(task).then(() => this.render());
+      void this.plugin.saveTask(task).then(() => {
+        new Notice('日志已删除');
+        this.render();
+      });
     });
   }
 }
@@ -1663,68 +1721,89 @@ class TextInputModal extends Modal {
 }
 
 class StatsView extends ItemView {
-  constructor(leaf: WorkspaceLeaf, private readonly plugin: TaskBoardPlugin) { super(leaf); }
-  getViewType(): string { return VIEW_TYPE_STATS; }
-  getDisplayText(): string { return '任务统计'; }
-  getIcon(): string { return 'table-properties'; }
-  async onOpen(): Promise<void> { this.render(); }
-  async onClose(): Promise<void> { this.contentEl.empty(); }
+  activeTab = 'tags';
+  constructor(leaf, plugin) { super(leaf); this.plugin = plugin; }
+  getViewType() { return VIEW_TYPE_STATS; }
+  getDisplayText() { return '任务统计'; }
+  getIcon() { return 'table-properties'; }
+  async onOpen() { this.render(); }
+  async onClose() { this.contentEl.empty(); }
 
-  render(): void {
+  render() {
     const root = this.contentEl;
     root.empty();
     root.addClass('task-stats-view');
-
     const header = root.createDiv({ cls: 'task-board-header' });
-    const headerText = header.createDiv({ cls: 'task-board-header-text' });
-    headerText.createEl('h2', { text: '任务统计', cls: 'task-board-heading' });
-    headerText.createDiv({ text: '统计维度来自设置中的内置维度和自定义任务指标。', cls: 'task-board-subtitle' });
-    const settingsButton = header.createEl('button', { text: '打开设置', cls: 'task-board-secondary-button' });
-    settingsButton.addEventListener('click', () => {
-      // Obsidian 不提供直接的“打开指定设置页”公共 API；这里给出提示，避免依赖内部 API。
-      new Notice('请打开 设置 → 第三方插件 → Task Board');
-    });
+    const ht = header.createDiv({ cls: 'task-board-header-text' });
+    ht.createEl('h2', { text: '任务统计', cls: 'task-board-heading' });
+    ht.createDiv({ text: '按任务标签或任务指标查看统计结果。', cls: 'task-board-subtitle' });
+    const sb = header.createEl('button', { text: '打开设置', cls: 'task-board-secondary-button' });
+    sb.addEventListener('click', () => new Notice('请打开 设置 → 第三方插件 → Task Board'));
 
-    const dimensions = this.getDimensions();
+    const tabs = root.createDiv({ cls: 'task-stats-tabs' });
+    const t = tabs.createEl('button', { text: '任务标签', cls: `task-stats-tab${this.activeTab === 'tags' ? ' is-active' : ''}` });
+    const m = tabs.createEl('button', { text: '任务指标', cls: `task-stats-tab${this.activeTab === 'metrics' ? ' is-active' : ''}` });
+    t.addEventListener('click', () => { this.activeTab = 'tags'; this.render(); });
+    m.addEventListener('click', () => { this.activeTab = 'metrics'; this.render(); });
+
+    if (this.activeTab === 'tags') this.renderTagStats(root);
+    else this.renderMetricStats(root);
+  }
+
+  private renderDimensionTable(root: HTMLElement, dimensions: Array<{ id: string; name: string }>, isMetric: boolean): void {
     const table = root.createEl('table', { cls: 'task-stats-table' });
-    const thead = table.createEl('thead');
-    const headRow = thead.createEl('tr');
-    headRow.createEl('th', { text: '任务' });
-    dimensions.forEach((dimension) => headRow.createEl('th', { text: dimension.name }));
+    const head = table.createEl('thead').createEl('tr');
+    head.createEl('th', { text: '任务' });
+    dimensions.forEach((dimension) => head.createEl('th', { text: dimension.name }));
 
-    const tbody = table.createEl('tbody');
+    const body = table.createEl('tbody');
+    const totals = new Map<string, number>();
+    dimensions.forEach((dimension) => totals.set(dimension.id, 0));
+
     this.plugin.data.tasks.forEach((task) => {
-      const tr = tbody.createEl('tr');
-      const taskCell = tr.createEl('td', { cls: 'task-stats-task-cell' });
-      const property = getProperty(this.plugin.data.settings, task.propertyId);
-      taskCell.createDiv({ text: task.title, cls: 'task-stats-task-name' });
-      taskCell.createDiv({ text: `${property.name}${task.completed ? ' · 已完成' : ''}`, cls: 'task-stats-task-meta' });
-
+      const tr = body.createEl('tr');
+      tr.createEl('td', { text: task.title, cls: 'task-stats-task-name' });
       dimensions.forEach((dimension) => {
-        const td = tr.createEl('td', { cls: 'task-stats-value-cell' });
-        if (dimension.id === 'completed') td.setText(task.completed ? '✓' : '—');
-        else if (dimension.id === 'logCount') td.setText(String(task.logs.length));
-        else if (dimension.id === 'tagCount') td.setText(String(task.tags.length));
-        else td.setText(task.metrics[dimension.id] ? '✓' : '—');
+        const key = isMetric ? dimension.id.slice('metric:'.length) : dimension.id.slice('tag:'.length);
+        const checked = isMetric ? Boolean(task.metrics[key]) : task.tags.includes(key);
+        if (checked) totals.set(dimension.id, (totals.get(dimension.id) || 0) + 1);
+        tr.createEl('td', { text: checked ? '✓' : '', cls: 'task-stats-value-cell' });
       });
     });
 
-    if (this.plugin.data.tasks.length === 0) {
-      const tr = tbody.createEl('tr');
-      const td = tr.createEl('td', { text: '暂无任务。' });
-      td.colSpan = dimensions.length + 1;
+    if (!this.plugin.data.tasks.length) {
+      const td = body.createEl('td', { text: '暂无任务。' });
+      td.colSpan = Math.max(1, dimensions.length + 1);
+    }
+
+    const total = body.createEl('tr', { cls: 'task-stats-total-row' });
+    total.createEl('td', { text: '总计' });
+    dimensions.forEach((dimension) => {
+      total.createEl('td', { text: String(totals.get(dimension.id) || 0), cls: 'task-stats-value-cell' });
+    });
+
+    if (!dimensions.length) {
+      const td = body.createEl('td', { text: '请在插件设置的“统计表列”中勾选需要显示的维度。' });
+      td.colSpan = 2;
     }
   }
 
-  private getDimensions(): Array<{ id: string; name: string }> {
-    const map = new Map<string, string>([
-      ['completed', '已完成'],
-      ['logCount', '日志数量'],
-      ['tagCount', '标签数量'],
-    ]);
-    this.plugin.data.settings.metrics.forEach((metric) => map.set(metric.id, metric.name));
-    return this.plugin.data.settings.statsColumns
-      .map((id) => ({ id, name: map.get(id) ?? id }))
-      .filter((dimension, index, array) => array.findIndex((item) => item.id === dimension.id) === index);
+  private renderTagStats(root: HTMLElement): void {
+    const dimensions = this.plugin.data.settings.statsColumns
+      .filter((id) => id.startsWith('tag:'))
+      .map((id) => ({ id, name: id.slice('tag:'.length) }));
+    this.renderDimensionTable(root, dimensions, false);
+  }
+
+  private renderMetricStats(root: HTMLElement): void {
+    const dimensions = this.plugin.data.settings.statsColumns
+      .filter((id) => id.startsWith('metric:'))
+      .map((id) => {
+        const metricId = id.slice('metric:'.length);
+        const metric = this.plugin.data.settings.metrics.find((item) => item.id === metricId);
+        return metric ? { id, name: metric.name } : null;
+      })
+      .filter((item): item is { id: string; name: string } => Boolean(item));
+    this.renderDimensionTable(root, dimensions, true);
   }
 }

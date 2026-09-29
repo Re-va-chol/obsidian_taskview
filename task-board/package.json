@@ -1,6 +1,6 @@
 {
   "name": "obsidian-task-board",
-  "version": "0.6.0",
+  "version": "0.6.4",
   "private": true,
   "description": "Configurable task board for Obsidian",
   "main": "main.js",

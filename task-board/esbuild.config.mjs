@@ -1,24 +1,15 @@
 import esbuild from 'esbuild';
-import process from 'process';
 
-const production = process.argv[2] === 'production';
+const prod = process.argv[2] === 'production';
 
-const context = await esbuild.context({
+await esbuild.build({
   entryPoints: ['main.ts'],
   bundle: true,
   external: ['obsidian'],
   format: 'cjs',
   target: 'es2018',
-  sourcemap: production ? false : 'inline',
-  minify: production,
+  sourcemap: false,
   treeShaking: true,
+  minify: prod,
   outfile: 'main.js',
-  logLevel: 'info',
 });
-
-if (production) {
-  await context.rebuild();
-  await context.dispose();
-} else {
-  await context.watch();
-}
