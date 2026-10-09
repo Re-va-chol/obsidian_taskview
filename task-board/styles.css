@@ -1066,3 +1066,43 @@
 .task-modal-log-textarea:disabled {
   overflow-y: hidden;
 }
+
+/* v0.6.5: full-log hover preview, configurable log status and sortable stats */
+.task-card-log { position: relative; border-left: 6px solid var(--task-log-status-color, #9ca3af); padding-left: 10px; }
+.task-card-log-popout { position: fixed; left: 8px; top: 100%; z-index: 1000; min-width: 220px; max-width: min(420px, 70vw); max-height: 260px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; padding: 10px 12px; border: 1px solid var(--background-modifier-border); border-radius: 8px; background: var(--background-primary); color: var(--text-normal); box-shadow: 0 8px 24px rgba(0,0,0,.2); font-size: var(--task-logs-size, 13px); line-height: 1.5; pointer-events: none; }
+.task-modal-log-actions { display: flex; align-items: center; gap: 6px; }
+.task-modal-log-status-wrap { position: relative; display: inline-flex; }
+.task-modal-log-status-button { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; padding: 3px; color: var(--task-log-status-color, #9ca3af); border: 0; background: transparent; cursor: pointer; }
+.task-modal-log-status-button svg { stroke: var(--task-log-status-color, #9ca3af); }
+.task-modal-log-status-menu { position: absolute; z-index: 20; right: 100%; top: 0; display: flex; gap: 5px; padding: 4px; border: 1px solid var(--background-modifier-border); border-radius: 8px; background: var(--background-secondary); white-space: nowrap; animation: task-log-status-slide .18s ease-out; }
+.task-modal-log-status-menu.is-hidden { display: none; }
+.task-modal-log-status-option { border: 0; border-radius: 5px; background: transparent; color: var(--text-normal); padding: 5px 8px; cursor: pointer; border-left: 4px solid var(--task-log-status-color); }
+.task-modal-log-status-option:hover { background: var(--background-modifier-hover); }
+@keyframes task-log-status-slide { from { opacity: 0; transform: translateX(10px); } to { opacity: 1; transform: translateX(0); } }
+.task-board-log-status-list { display: flex; flex-direction: column; gap: 6px; }
+.task-board-log-status-setting { display: flex; align-items: center; gap: 8px; }
+.task-board-log-status-setting input[type="text"] { flex: 1; }
+.task-board-log-status-setting input[type="color"] { width: 42px; height: 30px; padding: 2px; }
+.task-board-sortable-stat-list { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
+.task-board-sortable-stat-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--background-modifier-border); border-radius: 7px; background: var(--background-secondary); cursor: grab; }
+.task-board-sortable-stat-row.is-dragging { opacity: .45; }
+.task-board-sortable-handle { color: var(--text-faint); font-size: 1.2em; }
+.task-board-sortable-stat-name { flex: 1; }
+
+/* Compact, visually grouped typography controls in plugin settings. */
+.task-board-typography-group {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 9px;
+  padding: 8px 12px 4px;
+  margin: 10px 0 14px;
+  background: var(--background-secondary);
+}
+.task-board-typography-group h4 {
+  margin: 2px 0 6px;
+}
+.task-board-typography-group .setting-item {
+  padding: 7px 0;
+  border-top: 1px solid var(--background-modifier-border);
+}
+.task-board-sortable-stat-row { transition: background-color 120ms ease, opacity 120ms ease; }
+.task-board-sortable-stat-row.is-drag-over { border-color: var(--interactive-accent); }

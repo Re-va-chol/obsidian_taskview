@@ -28,6 +28,7 @@ const DEFAULT_SETTINGS = {
     ],
     statsColumns: ['tag:重要', 'tag:紧急', 'tag:长期', 'tag:工作日常', 'metric:first-edit', 'metric:submitted'],
     cardTypography: { title: { size: 16, weight: 750, italic: false, color: '' }, property: { size: 16, weight: 750, italic: false, color: '' }, tags: { size: 12, weight: 500, italic: false, color: '' }, metrics: { size: 12, weight: 500, italic: false, color: '' }, logs: { size: 13, weight: 400, italic: false, color: '' } },
+    logStatuses: [{ id: 'in-progress', name: '进行中', color: '#9ca3af' }, { id: 'done', name: '已完成', color: '#22c55e' }, { id: 'blocked', name: '受阻', color: '#ef4444' }],
 };
 function cloneDefaults() {
     return JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
@@ -62,21 +63,17 @@ function uniqueStrings(values) {
         return [];
     return [...new Set(values.map((v) => String(v).trim()).filter(Boolean))];
 }
-function normalizeCardTextStyle(raw, fallback) { var _a; return { size: safePositiveInt(Number(raw === null || raw === void 0 ? void 0 : raw.size), fallback.size, 8, 32), weight: safePositiveInt(Number(raw === null || raw === void 0 ? void 0 : raw.weight), fallback.weight, 300, 900), italic: Boolean((_a = raw === null || raw === void 0 ? void 0 : raw.italic) !== null && _a !== void 0 ? _a : fallback.italic), color: typeof (raw === null || raw === void 0 ? void 0 : raw.color) === 'string' ? raw.color : fallback.color }; }
+function normalizeCardTextStyle(raw, fallback) { return { size: safePositiveInt(Number(raw?.size), fallback.size, 8, 32), weight: safePositiveInt(Number(raw?.weight), fallback.weight, 300, 900), italic: Boolean(raw?.italic ?? fallback.italic), color: typeof raw?.color === 'string' ? raw.color : fallback.color }; }
 function normalizeSettings(raw) {
-    var _a, _b, _c, _d, _e;
     const defaults = cloneDefaults();
-    const settings = raw !== null && raw !== void 0 ? raw : {};
+    const settings = raw ?? {};
     const rawProperties = Array.isArray(settings.properties) ? settings.properties : defaults.properties;
     const properties = rawProperties
-        .map((property, index) => {
-        var _a, _b, _c;
-        return ({
-            id: String((_a = property === null || property === void 0 ? void 0 : property.id) !== null && _a !== void 0 ? _a : `property-${index + 1}`),
-            name: String((_b = property === null || property === void 0 ? void 0 : property.name) !== null && _b !== void 0 ? _b : '').trim() || `属性 ${index + 1}`,
-            color: String((_c = property === null || property === void 0 ? void 0 : property.color) !== null && _c !== void 0 ? _c : '#64748b'),
-        });
-    })
+        .map((property, index) => ({
+        id: String(property?.id ?? `property-${index + 1}`),
+        name: String(property?.name ?? '').trim() || `属性 ${index + 1}`,
+        color: String(property?.color ?? '#64748b'),
+    }))
         .filter((property) => property.name);
     return {
         columns: safePositiveInt(Number(settings.columns), defaults.columns, 1, 8),
@@ -90,18 +87,15 @@ function normalizeSettings(raw) {
         tags: uniqueStrings(settings.tags).length > 0 ? uniqueStrings(settings.tags) : defaults.tags,
         metrics: Array.isArray(settings.metrics)
             ? settings.metrics
-                .map((metric, index) => {
-                var _a, _b;
-                return ({
-                    id: String((_a = metric === null || metric === void 0 ? void 0 : metric.id) !== null && _a !== void 0 ? _a : `metric-${index + 1}`),
-                    name: String((_b = metric === null || metric === void 0 ? void 0 : metric.name) !== null && _b !== void 0 ? _b : '').trim() || `指标 ${index + 1}`,
-                });
-            })
+                .map((metric, index) => ({
+                id: String(metric?.id ?? `metric-${index + 1}`),
+                name: String(metric?.name ?? '').trim() || `指标 ${index + 1}`,
+            }))
                 .filter((metric) => metric.name)
             : defaults.metrics,
         statsColumns: (() => {
             const availableTags = uniqueStrings(settings.tags).length > 0 ? uniqueStrings(settings.tags) : defaults.tags;
-            const availableMetrics = Array.isArray(settings.metrics) ? settings.metrics.map((metric) => { var _a; return String((_a = metric === null || metric === void 0 ? void 0 : metric.id) !== null && _a !== void 0 ? _a : ''); }).filter(Boolean) : defaults.metrics.map((metric) => metric.id);
+            const availableMetrics = Array.isArray(settings.metrics) ? settings.metrics.map((metric) => String(metric?.id ?? '')).filter(Boolean) : defaults.metrics.map((metric) => metric.id);
             const available = new Set([...availableTags.map((tag) => `tag:${tag}`), ...availableMetrics.map((id) => `metric:${id}`)]);
             const raw = uniqueStrings(settings.statsColumns);
             const migrated = raw.map((id) => {
@@ -118,7 +112,8 @@ function normalizeSettings(raw) {
             const valid = uniqueStrings(migrated);
             return valid.length ? valid : [...available];
         })(),
-        cardTypography: { title: normalizeCardTextStyle((_a = settings.cardTypography) === null || _a === void 0 ? void 0 : _a.title, defaults.cardTypography.title), property: normalizeCardTextStyle((_b = settings.cardTypography) === null || _b === void 0 ? void 0 : _b.property, defaults.cardTypography.property), tags: normalizeCardTextStyle((_c = settings.cardTypography) === null || _c === void 0 ? void 0 : _c.tags, defaults.cardTypography.tags), metrics: normalizeCardTextStyle((_d = settings.cardTypography) === null || _d === void 0 ? void 0 : _d.metrics, defaults.cardTypography.metrics), logs: normalizeCardTextStyle((_e = settings.cardTypography) === null || _e === void 0 ? void 0 : _e.logs, defaults.cardTypography.logs) },
+        cardTypography: { title: normalizeCardTextStyle(settings.cardTypography?.title, defaults.cardTypography.title), property: normalizeCardTextStyle(settings.cardTypography?.property, defaults.cardTypography.property), tags: normalizeCardTextStyle(settings.cardTypography?.tags, defaults.cardTypography.tags), metrics: normalizeCardTextStyle(settings.cardTypography?.metrics, defaults.cardTypography.metrics), logs: normalizeCardTextStyle(settings.cardTypography?.logs, defaults.cardTypography.logs) },
+        logStatuses: Array.isArray(settings.logStatuses) && settings.logStatuses.length ? settings.logStatuses.map((item, i) => ({ id: String(item?.id ?? `status-${i + 1}`), name: String(item?.name ?? '').trim() || `状态 ${i + 1}`, color: /^#[0-9a-fA-F]{6}$/.test(String(item?.color ?? '')) ? String(item.color) : '#9ca3af' })) : defaults.logStatuses,
     };
 }
 function createDemoTasks(settings) {
@@ -163,8 +158,7 @@ function createDemoTasks(settings) {
     });
 }
 function getProperty(settings, propertyId) {
-    var _a, _b;
-    return (_b = (_a = settings.properties.find((property) => property.id === propertyId)) !== null && _a !== void 0 ? _a : settings.properties[0]) !== null && _b !== void 0 ? _b : {
+    return settings.properties.find((property) => property.id === propertyId) ?? settings.properties[0] ?? {
         id: 'other',
         name: '其他',
         color: '#64748b',
@@ -211,8 +205,8 @@ class TaskBoardPlugin extends obsidian_1.Plugin {
     }
     async loadPluginData() {
         const raw = await this.loadData();
-        const settings = normalizeSettings(raw === null || raw === void 0 ? void 0 : raw.settings);
-        const rawTasks = Array.isArray(raw === null || raw === void 0 ? void 0 : raw.tasks) ? raw.tasks : [];
+        const settings = normalizeSettings(raw?.settings);
+        const rawTasks = Array.isArray(raw?.tasks) ? raw.tasks : [];
         const boardCapacity = Math.max(0, settings.columns * settings.rows);
         let tasks;
         if (rawTasks.length === 0) {
@@ -220,34 +214,30 @@ class TaskBoardPlugin extends obsidian_1.Plugin {
         }
         else {
             tasks = rawTasks.map((rawTask, index) => {
-                var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k;
-                const oldType = String((_d = (_b = (_a = rawTask.propertyId) !== null && _a !== void 0 ? _a : rawTask.type) !== null && _b !== void 0 ? _b : (_c = settings.properties[0]) === null || _c === void 0 ? void 0 : _c.id) !== null && _d !== void 0 ? _d : 'other');
+                const oldType = String(rawTask.propertyId ?? rawTask.type ?? settings.properties[0]?.id ?? 'other');
                 const propertyId = settings.properties.some((p) => p.id === oldType)
                     ? oldType
-                    : (_f = (_e = settings.properties[0]) === null || _e === void 0 ? void 0 : _e.id) !== null && _f !== void 0 ? _f : 'other';
+                    : settings.properties[0]?.id ?? 'other';
                 const metrics = {};
                 const oldMetrics = rawTask.metrics && typeof rawTask.metrics === 'object' ? rawTask.metrics : {};
                 settings.metrics.forEach((metric) => {
                     metrics[metric.id] = Boolean(oldMetrics[metric.id]);
                 });
                 return {
-                    id: String((_g = rawTask.id) !== null && _g !== void 0 ? _g : createId('task')),
-                    title: String((_h = rawTask.title) !== null && _h !== void 0 ? _h : '未命名任务'),
+                    id: String(rawTask.id ?? createId('task')),
+                    title: String(rawTask.title ?? '未命名任务'),
                     propertyId,
                     tags: uniqueStrings(rawTask.tags),
                     metrics,
                     logs: Array.isArray(rawTask.logs)
-                        ? rawTask.logs.map((log) => {
-                            var _a, _b, _c;
-                            return ({
-                                id: String((_a = log.id) !== null && _a !== void 0 ? _a : createId('log')),
-                                content: String((_b = log.content) !== null && _b !== void 0 ? _b : ''),
-                                editedAt: Number((_c = log.editedAt) !== null && _c !== void 0 ? _c : Date.now()),
-                            });
-                        })
+                        ? rawTask.logs.map((log) => ({
+                            id: String(log.id ?? createId('log')),
+                            content: String(log.content ?? ''),
+                            editedAt: Number(log.editedAt ?? Date.now()),
+                        }))
                         : [],
-                    createdAt: Number((_j = rawTask.createdAt) !== null && _j !== void 0 ? _j : Date.now()),
-                    updatedAt: Number((_k = rawTask.updatedAt) !== null && _k !== void 0 ? _k : Date.now()),
+                    createdAt: Number(rawTask.createdAt ?? Date.now()),
+                    updatedAt: Number(rawTask.updatedAt ?? Date.now()),
                     completed: Boolean(rawTask.completed),
                     visibleOnBoard: typeof rawTask.visibleOnBoard === 'boolean'
                         ? rawTask.visibleOnBoard
@@ -258,32 +248,26 @@ class TaskBoardPlugin extends obsidian_1.Plugin {
                 };
             });
         }
-        const memoTopics = Array.isArray(raw === null || raw === void 0 ? void 0 : raw.memoTopics)
-            ? raw.memoTopics.map((topic, topicIndex) => {
-                var _a, _b, _c, _d;
-                return ({
-                    id: String((_a = topic.id) !== null && _a !== void 0 ? _a : createId('topic')),
-                    order: Number.isFinite(Number(topic.order)) ? Number(topic.order) : topicIndex,
-                    title: String((_b = topic.title) !== null && _b !== void 0 ? _b : '未命名主题'),
-                    pinned: Boolean(topic.pinned),
-                    createdAt: Number((_c = topic.createdAt) !== null && _c !== void 0 ? _c : Date.now()),
-                    updatedAt: Number((_d = topic.updatedAt) !== null && _d !== void 0 ? _d : Date.now()),
-                    notes: Array.isArray(topic.notes)
-                        ? topic.notes.map((note, noteIndex) => {
-                            var _a, _b, _c, _d;
-                            return ({
-                                id: String((_a = note.id) !== null && _a !== void 0 ? _a : createId('note')),
-                                order: Number.isFinite(Number(note.order)) ? Number(note.order) : noteIndex,
-                                content: String((_b = note.content) !== null && _b !== void 0 ? _b : ''),
-                                createdAt: Number((_c = note.createdAt) !== null && _c !== void 0 ? _c : Date.now()),
-                                updatedAt: Number((_d = note.updatedAt) !== null && _d !== void 0 ? _d : Date.now()),
-                            });
-                        })
-                            .sort((a, b) => a.order - b.order)
-                            .map((note, index) => ({ ...note, order: index }))
-                        : [],
-                });
-            })
+        const memoTopics = Array.isArray(raw?.memoTopics)
+            ? raw.memoTopics.map((topic, topicIndex) => ({
+                id: String(topic.id ?? createId('topic')),
+                order: Number.isFinite(Number(topic.order)) ? Number(topic.order) : topicIndex,
+                title: String(topic.title ?? '未命名主题'),
+                pinned: Boolean(topic.pinned),
+                createdAt: Number(topic.createdAt ?? Date.now()),
+                updatedAt: Number(topic.updatedAt ?? Date.now()),
+                notes: Array.isArray(topic.notes)
+                    ? topic.notes.map((note, noteIndex) => ({
+                        id: String(note.id ?? createId('note')),
+                        order: Number.isFinite(Number(note.order)) ? Number(note.order) : noteIndex,
+                        content: String(note.content ?? ''),
+                        createdAt: Number(note.createdAt ?? Date.now()),
+                        updatedAt: Number(note.updatedAt ?? Date.now()),
+                    }))
+                        .sort((a, b) => a.order - b.order)
+                        .map((note, index) => ({ ...note, order: index }))
+                    : [],
+            }))
                 .sort((a, b) => a.order - b.order)
                 .map((topic, index) => ({ ...topic, order: index }))
             : [];
@@ -307,14 +291,13 @@ class TaskBoardPlugin extends obsidian_1.Plugin {
         return this.data.tasks.find((task) => task.id === taskId);
     }
     async createTask(title = '新任务') {
-        var _a, _b;
         const now = Date.now();
         const metrics = {};
         this.data.settings.metrics.forEach((metric) => { metrics[metric.id] = false; });
         const task = {
             id: createId('task'),
             title,
-            propertyId: (_b = (_a = this.data.settings.properties[0]) === null || _a === void 0 ? void 0 : _a.id) !== null && _b !== void 0 ? _b : 'other',
+            propertyId: this.data.settings.properties[0]?.id ?? 'other',
             tags: [],
             metrics,
             logs: [],
@@ -335,7 +318,7 @@ class TaskBoardPlugin extends obsidian_1.Plugin {
     }
     async deleteTask(taskId) {
         const task = this.getTask(taskId);
-        if (task === null || task === void 0 ? void 0 : task.backgroundImagePath)
+        if (task?.backgroundImagePath)
             await this.deleteBackgroundFile(task.backgroundImagePath);
         this.data.tasks = this.data.tasks.filter((item) => item.id !== taskId);
         await this.savePluginData();
@@ -363,7 +346,7 @@ class TaskBoardPlugin extends obsidian_1.Plugin {
             try {
                 await this.app.vault.delete(file);
             }
-            catch (_a) {
+            catch {
                 // Ignore a missing/unavailable background file.
             }
         }
@@ -473,11 +456,10 @@ class TaskBoardPlugin extends obsidian_1.Plugin {
     }
     refreshViews() {
         window.requestAnimationFrame(() => {
-            var _a;
             for (const viewType of [exports.VIEW_TYPE_TASK_BOARD, exports.VIEW_TYPE_MEMO, exports.VIEW_TYPE_STATS]) {
                 for (const leaf of this.app.workspace.getLeavesOfType(viewType)) {
                     const view = leaf.view;
-                    if (((_a = view === null || view === void 0 ? void 0 : view.getViewType) === null || _a === void 0 ? void 0 : _a.call(view)) === viewType && typeof view.render === 'function') {
+                    if (view?.getViewType?.() === viewType && typeof view.render === 'function') {
                         view.render();
                     }
                 }
@@ -537,7 +519,7 @@ class TaskBoardSettingTab extends obsidian_1.PluginSettingTab {
             this.taskBoardPlugin.refreshViews();
         }));
         container.createEl('h3', { text: '卡片文字样式' });
-        container.createDiv({ text: '分别控制任务名称、任务属性、标签、任务指标和日志的字号、粗细、斜体和颜色。颜色留空表示跟随主题。', cls: 'task-board-setting-hint' });
+        container.createDiv({ text: '分别设置任务名称、任务属性、标签、任务指标和日志的字号、字重、斜体和颜色。字重仅提供视觉差异明显的“细”和“中等”；颜色留空表示跟随主题。', cls: 'task-board-setting-hint' });
         const typography = this.taskBoardPlugin.data.settings.cardTypography;
         this.renderCardTextStyle(container, '任务名称', typography.title);
         this.renderCardTextStyle(container, '任务属性', typography.property);
@@ -650,44 +632,73 @@ class TaskBoardSettingTab extends obsidian_1.PluginSettingTab {
             this.taskBoardPlugin.refreshViews();
             this.display();
         }));
+        container.createEl('h3', { text: '日志状态' });
+        container.createDiv({ text: '配置日志状态的名称和颜色。编辑任务中的日志状态选择会使用这些选项，保存任务修改后应用到卡片左侧色条。', cls: 'task-board-setting-hint' });
+        const logStatusList = container.createDiv({ cls: 'task-board-log-status-list' });
+        this.taskBoardPlugin.data.settings.logStatuses.forEach((item, index) => {
+            const row = logStatusList.createDiv({ cls: 'task-board-log-status-setting' });
+            const nameInput = row.createEl('input', { type: 'text', value: item.name, placeholder: '状态名称' });
+            const colorInput = row.createEl('input', { type: 'color', value: item.color });
+            const remove = row.createEl('button', { text: '删除', cls: 'task-board-setting-remove' });
+            nameInput.addEventListener('change', async () => { item.name = nameInput.value.trim() || `状态 ${index + 1}`; await this.taskBoardPlugin.savePluginData(); this.taskBoardPlugin.refreshViews(); });
+            colorInput.addEventListener('change', async () => { item.color = colorInput.value; await this.taskBoardPlugin.savePluginData(); this.taskBoardPlugin.refreshViews(); });
+            remove.addEventListener('click', async () => { this.taskBoardPlugin.data.settings.logStatuses = this.taskBoardPlugin.data.settings.logStatuses.filter((status) => status.id !== item.id); await this.taskBoardPlugin.savePluginData(); this.taskBoardPlugin.refreshViews(); this.display(); });
+        });
+        new obsidian_1.Setting(container).addButton((button) => button.setButtonText('＋ 添加日志状态').onClick(async () => { this.taskBoardPlugin.data.settings.logStatuses.push({ id: createId('log-status'), name: '新状态', color: '#9ca3af' }); await this.taskBoardPlugin.savePluginData(); this.display(); }));
         container.createEl('h3', { text: '统计表列' });
         container.createDiv({
             text: '选择哪些维度出现在统计表中。',
             cls: 'task-board-setting-hint',
         });
-        const statColumns = [
-            ...this.taskBoardPlugin.data.settings.tags.map((tag) => ({ id: `tag:${tag}`, name: `#${tag}` })),
-            ...this.taskBoardPlugin.data.settings.metrics.map((metric) => ({ id: `metric:${metric.id}`, name: metric.name })),
-        ];
-        statColumns.forEach((dimension) => {
-            new obsidian_1.Setting(container)
-                .setName(dimension.name)
-                .addToggle((toggle) => toggle
-                .setValue(this.taskBoardPlugin.data.settings.statsColumns.includes(dimension.id))
-                .onChange(async (value) => {
-                if (value) {
-                    if (!this.taskBoardPlugin.data.settings.statsColumns.includes(dimension.id)) {
-                        this.taskBoardPlugin.data.settings.statsColumns.push(dimension.id);
-                    }
-                }
-                else {
-                    this.taskBoardPlugin.data.settings.statsColumns = this.taskBoardPlugin.data.settings.statsColumns.filter((id) => id !== dimension.id);
-                }
-                await this.taskBoardPlugin.savePluginData();
-                this.taskBoardPlugin.refreshViews();
-            }));
-        });
+        const renderSortableStatsGroup = (title, ids, getName) => {
+            container.createEl('h4', { text: title });
+            const list = container.createDiv({ cls: 'task-board-sortable-stat-list' });
+            let draggedId = '';
+            ids.forEach((id) => {
+                const row = list.createDiv({ cls: 'task-board-sortable-stat-row', attr: { draggable: 'true' } });
+                row.dataset.statId = id;
+                row.createSpan({ text: '⠿', cls: 'task-board-sortable-handle' });
+                row.createSpan({ text: getName(id), cls: 'task-board-sortable-stat-name' });
+                row.addEventListener('dragstart', (event) => { draggedId = id; row.addClass('is-dragging'); event.dataTransfer?.setData('text/plain', id); });
+                row.addEventListener('dragend', () => row.removeClass('is-dragging'));
+                row.addEventListener('dragover', (event) => event.preventDefault());
+                row.addEventListener('drop', (event) => {
+                    event.preventDefault();
+                    const source = event.dataTransfer?.getData('text/plain') || draggedId;
+                    if (!source || source === id)
+                        return;
+                    const current = this.taskBoardPlugin.data.settings.statsColumns;
+                    const groupIds = current.filter((value) => value.startsWith(title === '任务标签' ? 'tag:' : 'metric:'));
+                    const from = groupIds.indexOf(source);
+                    const to = groupIds.indexOf(id);
+                    if (from < 0 || to < 0)
+                        return;
+                    groupIds.splice(to, 0, ...groupIds.splice(from, 1));
+                    const other = current.filter((value) => !value.startsWith(title === '任务标签' ? 'tag:' : 'metric:'));
+                    this.taskBoardPlugin.data.settings.statsColumns = title === '任务标签' ? [...groupIds, ...other] : [...other.filter((v) => v.startsWith('tag:')), ...groupIds];
+                    groupIds.forEach((value) => {
+                        const matchingRow = Array.from(list.querySelectorAll('.task-board-sortable-stat-row')).find((item) => item.dataset.statId === value);
+                        if (matchingRow)
+                            list.appendChild(matchingRow);
+                    });
+                    void this.taskBoardPlugin.savePluginData().then(() => this.taskBoardPlugin.refreshViews());
+                });
+            });
+        };
+        renderSortableStatsGroup('任务标签', this.taskBoardPlugin.data.settings.statsColumns.filter((id) => id.startsWith('tag:')), (id) => `#${id.slice(4)}`);
+        renderSortableStatsGroup('任务指标', this.taskBoardPlugin.data.settings.statsColumns.filter((id) => id.startsWith('metric:')), (id) => this.taskBoardPlugin.data.settings.metrics.find((m) => `metric:${m.id}` === id)?.name ?? id);
         container.createEl('h3', { text: '其他' });
         new obsidian_1.Setting(container)
             .setName('任务排序说明')
             .setDesc('任务卡片按“显示在看板”选择结果排列。');
     }
     renderCardTextStyle(container, name, style) {
-        container.createEl('h4', { text: name });
-        new obsidian_1.Setting(container).setName('字号').addText((text) => text.setValue(String(style.size)).onChange(async (value) => { style.size = safePositiveInt(Number(value), style.size, 8, 32); await this.taskBoardPlugin.savePluginData(); this.taskBoardPlugin.refreshViews(); }));
-        new obsidian_1.Setting(container).setName('粗细').addDropdown((drop) => drop.addOptions({ '300': '细', '400': '正常', '500': '中等', '600': '半粗', '700': '粗', '750': '更粗', '800': '很粗', '900': '最粗' }).setValue(String(style.weight)).onChange(async (value) => { style.weight = Number(value); await this.taskBoardPlugin.savePluginData(); this.taskBoardPlugin.refreshViews(); }));
-        new obsidian_1.Setting(container).setName('斜体').addToggle((toggle) => toggle.setValue(style.italic).onChange(async (value) => { style.italic = value; await this.taskBoardPlugin.savePluginData(); this.taskBoardPlugin.refreshViews(); }));
-        new obsidian_1.Setting(container).setName('颜色').addText((text) => text.setPlaceholder('留空跟随主题，例如 #ffffff').setValue(style.color).onChange(async (value) => { style.color = value.trim(); await this.taskBoardPlugin.savePluginData(); this.taskBoardPlugin.refreshViews(); }));
+        const group = container.createDiv({ cls: 'task-board-typography-group' });
+        group.createEl('h4', { text: name });
+        new obsidian_1.Setting(group).setName('字号').addText((text) => text.setValue(String(style.size)).onChange(async (value) => { style.size = safePositiveInt(Number(value), style.size, 8, 32); await this.taskBoardPlugin.savePluginData(); this.taskBoardPlugin.refreshViews(); }));
+        new obsidian_1.Setting(group).setName('粗细').addDropdown((drop) => drop.addOptions({ '300': '细', '500': '中等' }).setValue(style.weight >= 500 ? '500' : '300').onChange(async (value) => { style.weight = Number(value); await this.taskBoardPlugin.savePluginData(); this.taskBoardPlugin.refreshViews(); }));
+        new obsidian_1.Setting(group).setName('斜体').addToggle((toggle) => toggle.setValue(style.italic).onChange(async (value) => { style.italic = value; await this.taskBoardPlugin.savePluginData(); this.taskBoardPlugin.refreshViews(); }));
+        new obsidian_1.Setting(group).setName('颜色').addText((text) => text.setPlaceholder('留空跟随主题，例如 #ffffff').setValue(style.color).onChange(async (value) => { style.color = value.trim(); await this.taskBoardPlugin.savePluginData(); this.taskBoardPlugin.refreshViews(); }));
     }
     renderPropertySetting(container, property) {
         const row = container.createDiv({ cls: 'task-board-setting-item' });
@@ -711,12 +722,11 @@ class TaskBoardSettingTab extends obsidian_1.PluginSettingTab {
             void this.taskBoardPlugin.savePluginData().then(() => this.taskBoardPlugin.refreshViews());
         });
         deleteButton.addEventListener('click', () => {
-            var _a;
             if (this.taskBoardPlugin.data.settings.properties.length <= 1) {
                 new obsidian_1.Notice('至少需要保留一个任务属性');
                 return;
             }
-            const fallbackId = (_a = this.taskBoardPlugin.data.settings.properties.find((item) => item.id !== property.id)) === null || _a === void 0 ? void 0 : _a.id;
+            const fallbackId = this.taskBoardPlugin.data.settings.properties.find((item) => item.id !== property.id)?.id;
             this.taskBoardPlugin.data.tasks.forEach((task) => {
                 if (task.propertyId === property.id && fallbackId)
                     task.propertyId = fallbackId;
@@ -848,17 +858,23 @@ class TaskBoardView extends obsidian_1.ItemView {
         else {
             previewLogs.forEach((log) => {
                 const row = logsContainer.createDiv({ cls: 'task-card-log' });
+                const status = this.plugin.data.settings.logStatuses.find((item) => item.id === log.statusId);
+                row.style.setProperty('--task-log-status-color', status?.color || '#9ca3af');
                 row.createDiv({ text: shortDate(log.editedAt), cls: 'task-card-log-time' });
-                row.createDiv({ text: log.content, cls: 'task-card-log-content' });
+                const logContent = row.createDiv({ text: log.content, cls: 'task-card-log-content' });
+                let hoverTimer;
+                let popup = null;
+                row.addEventListener('mouseenter', () => { hoverTimer = window.setTimeout(() => { popup = document.createElement('div'); popup.className = 'task-card-log-popout'; popup.textContent = log.content; const rect = row.getBoundingClientRect(); popup.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - 440))}px`; popup.style.top = `${Math.min(rect.bottom + 6, window.innerHeight - 280)}px`; document.body.appendChild(popup); }, 1000); });
+                row.addEventListener('mouseleave', () => { if (hoverTimer !== undefined)
+                    window.clearTimeout(hoverTimer); popup?.remove(); popup = null; });
             });
         }
         let didDrag = false;
         card.draggable = true;
         card.addEventListener('dragstart', (event) => {
-            var _a;
             didDrag = true;
             card.addClass('is-dragging');
-            (_a = event.dataTransfer) === null || _a === void 0 ? void 0 : _a.setData('text/task-board-task-id', task.id);
+            event.dataTransfer?.setData('text/task-board-task-id', task.id);
             if (event.dataTransfer)
                 event.dataTransfer.effectAllowed = 'move';
         });
@@ -875,10 +891,9 @@ class TaskBoardView extends obsidian_1.ItemView {
             card.removeClass('is-drag-over');
         });
         card.addEventListener('drop', (event) => {
-            var _a;
             event.preventDefault();
             card.removeClass('is-drag-over');
-            const draggedId = (_a = event.dataTransfer) === null || _a === void 0 ? void 0 : _a.getData('text/task-board-task-id');
+            const draggedId = event.dataTransfer?.getData('text/task-board-task-id');
             if (draggedId)
                 void this.plugin.reorderVisibleTasks(draggedId, task.id);
         });
@@ -903,8 +918,7 @@ class TaskModal extends obsidian_1.Modal {
     onOpen() { this.applyBackdropBlur(); this.modalEl.addClass('task-board-task-modal'); this.render(); }
     onClose() { this.contentEl.empty(); }
     applyBackdropBlur() {
-        var _a, _b;
-        (_b = (_a = this.modalEl.parentElement) === null || _a === void 0 ? void 0 : _a.querySelector('.modal-bg')) === null || _b === void 0 ? void 0 : _b.classList.add('task-board-modal-backdrop');
+        this.modalEl.parentElement?.querySelector('.modal-bg')?.classList.add('task-board-modal-backdrop');
     }
     render() {
         const task = this.plugin.getTask(this.taskId);
@@ -922,6 +936,7 @@ class TaskModal extends obsidian_1.Modal {
         let draftPropertyId = task.propertyId;
         let draftTags = [...task.tags];
         let draftMetrics = { ...task.metrics };
+        const draftLogStatuses = Object.fromEntries(task.logs.map((log) => [log.id, log.statusId ?? '']));
         const header = container.createDiv({ cls: 'task-modal-header' });
         const headerText = header.createDiv({ cls: 'task-modal-header-text' });
         const titlePreview = headerText.createDiv({ text: task.title, cls: 'task-modal-title-preview' });
@@ -1022,6 +1037,7 @@ class TaskModal extends obsidian_1.Modal {
             currentTask.propertyId = draftPropertyId;
             currentTask.tags = uniqueStrings(draftTags);
             currentTask.metrics = { ...draftMetrics };
+            currentTask.logs.forEach((log) => { log.statusId = draftLogStatuses[log.id] || undefined; });
             void this.plugin.saveTask(currentTask).then(() => { new obsidian_1.Notice('任务修改已保存'); this.render(); });
         });
         const logsHeader = container.createDiv({ cls: 'task-modal-logs-header' });
@@ -1032,7 +1048,7 @@ class TaskModal extends obsidian_1.Modal {
         if (sortedLogs.length === 0) {
             logs.createDiv({ text: '暂无日志。', cls: 'task-modal-empty-logs' });
         }
-        sortedLogs.forEach((log) => this.renderLog(logs, log));
+        sortedLogs.forEach((log) => this.renderLog(logs, log, draftLogStatuses));
         const addLogBox = container.createDiv({ cls: 'task-modal-add-log' });
         addLogBox.createDiv({ text: '新增日志', cls: 'task-modal-section-label' });
         const newLogTextarea = addLogBox.createEl('textarea', {
@@ -1063,7 +1079,7 @@ class TaskModal extends obsidian_1.Modal {
         backgroundInput.accept = 'image/*';
         const chooseImageButton = backgroundRow.createEl('button', { text: task.backgroundImagePath ? '更换背景图片' : '选择本地图片', cls: 'task-modal-secondary-button' });
         chooseImageButton.addEventListener('click', () => backgroundInput.click());
-        backgroundInput.addEventListener('change', () => { var _a; const file = (_a = backgroundInput.files) === null || _a === void 0 ? void 0 : _a[0]; if (!file)
+        backgroundInput.addEventListener('change', () => { const file = backgroundInput.files?.[0]; if (!file)
             return; void this.plugin.setTaskBackground(this.taskId, file).then(() => { new obsidian_1.Notice('任务背景图片已更新'); this.render(); }); });
         if (task.backgroundImagePath) {
             const url = this.plugin.getTaskBackgroundUrl(task);
@@ -1089,11 +1105,19 @@ class TaskModal extends obsidian_1.Modal {
         label.createSpan({ text });
         checkbox.addEventListener('change', () => onChange(checkbox.checked));
     }
-    renderLog(container, log) {
+    renderLog(container, log, draftStatuses) {
         const row = container.createDiv({ cls: 'task-modal-log-row' });
         const meta = row.createDiv({ cls: 'task-modal-log-meta' });
         const time = meta.createDiv({ text: formatDate(log.editedAt), cls: 'task-modal-log-time' });
         const actions = meta.createDiv({ cls: 'task-modal-log-actions' });
+        const statusWrap = actions.createDiv({ cls: 'task-modal-log-status-wrap' });
+        const statusButton = statusWrap.createEl('button', { cls: 'task-modal-log-status-button', attr: { title: '设置日志状态', 'aria-label': '设置日志状态' } });
+        const selectedStatus = this.plugin.data.settings.logStatuses.find((item) => item.id === (draftStatuses[log.id] || log.statusId));
+        statusButton.style.setProperty('--task-log-status-color', selectedStatus?.color || '#9ca3af');
+        (0, obsidian_1.setIcon)(statusButton, 'circle-dot');
+        const statusMenu = statusWrap.createDiv({ cls: 'task-modal-log-status-menu is-hidden' });
+        this.plugin.data.settings.logStatuses.forEach((status) => { const option = statusMenu.createEl('button', { cls: 'task-modal-log-status-option', text: status.name }); option.style.setProperty('--task-log-status-color', status.color); option.addEventListener('click', () => { draftStatuses[log.id] = status.id; statusButton.style.setProperty('--task-log-status-color', status.color); statusMenu.addClass('is-hidden'); }); });
+        statusButton.addEventListener('click', (event) => { event.stopPropagation(); statusMenu.toggleClass('is-hidden', !statusMenu.hasClass('is-hidden')); });
         const editButton = actions.createEl('button', { cls: 'task-modal-log-icon-button', attr: { 'aria-label': '编辑日志', title: '编辑日志' } });
         (0, obsidian_1.setIcon)(editButton, 'pencil');
         const deleteButton = actions.createEl('button', { cls: 'task-modal-log-icon-button task-modal-log-delete-button', attr: { 'aria-label': '删除日志', title: '删除日志' } });
@@ -1164,8 +1188,7 @@ class AllTasksModal extends obsidian_1.Modal {
     }
     onClose() { this.contentEl.empty(); }
     applyBackdropBlur() {
-        var _a, _b;
-        (_b = (_a = this.modalEl.parentElement) === null || _a === void 0 ? void 0 : _a.querySelector('.modal-bg')) === null || _b === void 0 ? void 0 : _b.classList.add('task-board-modal-backdrop');
+        this.modalEl.parentElement?.querySelector('.modal-bg')?.classList.add('task-board-modal-backdrop');
     }
     render() {
         const container = this.contentEl;
@@ -1244,7 +1267,6 @@ class MemoView extends obsidian_1.ItemView {
     async onOpen() { this.render(); }
     async onClose() { this.contentEl.empty(); }
     render() {
-        var _a;
         const root = this.contentEl;
         root.empty();
         root.addClass('task-memo-view');
@@ -1293,17 +1315,15 @@ class MemoView extends obsidian_1.ItemView {
             });
             row.draggable = true;
             row.addEventListener('dragstart', (event) => {
-                var _a;
                 event.stopPropagation();
                 didDrag = true;
                 row.addClass('is-dragging');
-                (_a = event.dataTransfer) === null || _a === void 0 ? void 0 : _a.setData('text/task-board-topic-id', topic.id);
+                event.dataTransfer?.setData('text/task-board-topic-id', topic.id);
                 if (event.dataTransfer)
                     event.dataTransfer.effectAllowed = 'move';
             });
             row.addEventListener('dragover', (event) => {
-                var _a;
-                const draggedId = (_a = event.dataTransfer) === null || _a === void 0 ? void 0 : _a.types.includes('text/task-board-topic-id');
+                const draggedId = event.dataTransfer?.types.includes('text/task-board-topic-id');
                 if (!draggedId)
                     return;
                 event.preventDefault();
@@ -1318,11 +1338,10 @@ class MemoView extends obsidian_1.ItemView {
                 window.setTimeout(() => { didDrag = false; }, 250);
             });
             row.addEventListener('drop', (event) => {
-                var _a;
                 event.preventDefault();
                 event.stopPropagation();
                 row.removeClass('is-drag-over');
-                const draggedId = (_a = event.dataTransfer) === null || _a === void 0 ? void 0 : _a.getData('text/task-board-topic-id');
+                const draggedId = event.dataTransfer?.getData('text/task-board-topic-id');
                 if (draggedId)
                     void this.plugin.reorderMemoTopics(draggedId, topic.id);
             });
@@ -1339,7 +1358,7 @@ class MemoView extends obsidian_1.ItemView {
             this.selectedTopicId = topic.id;
         const notesPane = layout.createDiv({ cls: 'task-memo-notes' });
         const noteHeader = notesPane.createDiv({ cls: 'task-memo-notes-header' });
-        noteHeader.createDiv({ text: (_a = topic === null || topic === void 0 ? void 0 : topic.title) !== null && _a !== void 0 ? _a : '请选择主题', cls: 'task-memo-pane-title' });
+        noteHeader.createDiv({ text: topic?.title ?? '请选择主题', cls: 'task-memo-pane-title' });
         const addNote = noteHeader.createEl('button', { text: '+ 添加笔记', cls: 'task-board-secondary-button' });
         addNote.disabled = !topic;
         addNote.addEventListener('click', () => {
@@ -1360,10 +1379,9 @@ class MemoView extends obsidian_1.ItemView {
             [...topic.notes]
                 .sort((a, b) => a.order - b.order)
                 .forEach((note) => {
-                var _a, _b;
                 const card = noteList.createDiv({ cls: 'task-memo-note-card' });
                 let didDrag = false;
-                const firstLine = (_b = (_a = note.content.trim().split(/\r?\n/).find((line) => line.trim())) === null || _a === void 0 ? void 0 : _a.trim()) !== null && _b !== void 0 ? _b : '';
+                const firstLine = note.content.trim().split(/\r?\n/).find((line) => line.trim())?.trim() ?? '';
                 card.createDiv({ text: firstLine ? firstLine.slice(0, 40) : '新笔记', cls: 'task-memo-note-title' });
                 card.createDiv({ text: note.content || '还没有内容。', cls: 'task-memo-note-preview' });
                 card.createDiv({ text: `创建于 ${formatDate(note.createdAt)} · 编辑于 ${formatDate(note.updatedAt)}`, cls: 'task-memo-note-time' });
@@ -1374,18 +1392,16 @@ class MemoView extends obsidian_1.ItemView {
                 });
                 card.draggable = true;
                 card.addEventListener('dragstart', (event) => {
-                    var _a, _b;
                     event.stopPropagation();
                     didDrag = true;
                     card.addClass('is-dragging');
-                    (_a = event.dataTransfer) === null || _a === void 0 ? void 0 : _a.setData('text/task-board-note-id', note.id);
-                    (_b = event.dataTransfer) === null || _b === void 0 ? void 0 : _b.setData('text/task-board-topic-id', topic.id);
+                    event.dataTransfer?.setData('text/task-board-note-id', note.id);
+                    event.dataTransfer?.setData('text/task-board-topic-id', topic.id);
                     if (event.dataTransfer)
                         event.dataTransfer.effectAllowed = 'move';
                 });
                 card.addEventListener('dragover', (event) => {
-                    var _a;
-                    if (!((_a = event.dataTransfer) === null || _a === void 0 ? void 0 : _a.types.includes('text/task-board-note-id')))
+                    if (!event.dataTransfer?.types.includes('text/task-board-note-id'))
                         return;
                     event.preventDefault();
                     card.addClass('is-drag-over');
@@ -1399,12 +1415,11 @@ class MemoView extends obsidian_1.ItemView {
                     window.setTimeout(() => { didDrag = false; }, 250);
                 });
                 card.addEventListener('drop', (event) => {
-                    var _a, _b;
                     event.preventDefault();
                     event.stopPropagation();
                     card.removeClass('is-drag-over');
-                    const draggedId = (_a = event.dataTransfer) === null || _a === void 0 ? void 0 : _a.getData('text/task-board-note-id');
-                    const sourceTopicId = (_b = event.dataTransfer) === null || _b === void 0 ? void 0 : _b.getData('text/task-board-topic-id');
+                    const draggedId = event.dataTransfer?.getData('text/task-board-note-id');
+                    const sourceTopicId = event.dataTransfer?.getData('text/task-board-topic-id');
                     if (draggedId && sourceTopicId === topic.id) {
                         void this.plugin.reorderMemoNotes(topic.id, draggedId, note.id);
                     }
@@ -1502,12 +1517,11 @@ class MemoNoteModal extends obsidian_1.Modal {
     }
     onClose() { this.contentEl.empty(); }
     applyBackdropBlur() {
-        var _a, _b;
-        (_b = (_a = this.modalEl.parentElement) === null || _a === void 0 ? void 0 : _a.querySelector('.modal-bg')) === null || _b === void 0 ? void 0 : _b.classList.add('task-board-modal-backdrop');
+        this.modalEl.parentElement?.querySelector('.modal-bg')?.classList.add('task-board-modal-backdrop');
     }
     render() {
         const topic = this.plugin.data.memoTopics.find((item) => item.id === this.topicId);
-        const note = topic === null || topic === void 0 ? void 0 : topic.notes.find((item) => item.id === this.noteId);
+        const note = topic?.notes.find((item) => item.id === this.noteId);
         if (!topic || !note) {
             this.contentEl.setText('笔记不存在。');
             return;
